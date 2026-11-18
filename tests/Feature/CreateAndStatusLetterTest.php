@@ -195,4 +195,78 @@ class CreateAndStatusLetterTest extends TestCase
 
         $this->assertCount(0, $resB->json('data'));
     }
+
+    public function test_letter_composer_drag_and_drop_reorder_and_resilient_deletion(): void
+    {
+        [$ws, $sec, $tpl] = $this->seedWorkspaceWithTemplate();
+        $this->actingAs($sec);
+
+        $presets = Workspace::signerPresets();
+        $signers = $presets['5_signers']['signers'];
+
+        $test = \Livewire\Livewire::test(\App\Livewire\Letters\LetterComposer::class)
+            ->set('templateId', $tpl->id)
+            ->set('perihal', 'Uji Reorder dan Hapus TTD')
+            ->set('letterDate', '2026-06-15')
+            ->set('signers', $signers)
+            ->set('values', [
+                'penerima' => 'Ketua Jurusan',
+                'tempat_tujuan' => 'Kampus',
+                'nama_kegiatan' => 'Makrab TRPL',
+                'tanggal_kegiatan' => '2026-06-20',
+            ]);
+
+        // Test Move Signer (drag & drop reorder)
+        $test->call('moveSigner', 0, 1) // Swap Ketua HIMATRIS and Ketua Pelaksana
+            ->assertSet('signers.0.position', 'Ketua Pelaksana,')
+            ->assertSet('signers.1.position', 'Ketua HIMATRIS,');
+
+        // Test Move Up
+        $test->call('moveSignerUp', 1)
+            ->assertSet('signers.0.position', 'Ketua HIMATRIS,')
+            ->assertSet('signers.1.position', 'Ketua Pelaksana,');
+
+        // Test Deletion from 5 -> 4
+        $test->call('removeSigner', 4) // Remove 5th
+            ->assertCount('signers', 4);
+
+        // Test Deletion from 4 -> 3
+        $test->call('removeSigner', 3) // Remove 4th
+            ->assertCount('signers', 3);
+
+        // Save draft and ensure it renders properly
+        $test->call('save')
+            ->assertHasNoErrors();
+
+        $letter = \App\Models\Letter::where('perihal', 'Uji Reorder dan Hapus TTD')->firstOrFail();
+        $this->assertCount(3, $letter->field_values['_signers']);
+
+        // Verify PDF preview generation with 3 signers (1 pair + 1 center)
+        $pdfService = app(\App\Services\Documents\PdfPreviewService::class);
+        $res = $pdfService->ensurePreviewPdf($letter);
+        $this->assertTrue($res['ok']);
+        $this->assertNotNull($letter->preview_pdf_path);
+
+        // Now test updating an existing letter whose signers array has NO 'layout' key
+        $letter->field_values = [
+            'penerima' => 'Ketua Jurusan',
+            'tempat_tujuan' => 'Kampus',
+            'nama_kegiatan' => 'Makrab TRPL',
+            'tanggal_kegiatan' => '2026-06-20',
+            '_signers' => [
+                ['prefix' => '', 'position' => 'Ketua HIMATRIS,', 'name' => 'Dimas', 'id_label' => 'NIM.', 'id_number' => '123'],
+                ['prefix' => '', 'position' => 'Ketua Pelaksana,', 'name' => 'Karisma', 'id_label' => 'NIM.', 'id_number' => '456'],
+            ],
+        ];
+        $letter->saveQuietly();
+
+        \Livewire\Livewire::test(\App\Livewire\Letters\LetterComposer::class, ['letter' => $letter])
+            ->set('perihal', 'Perihal Diperbarui')
+            ->call('save')
+            ->assertHasNoErrors()
+            ->assertRedirect(route('letters.show', $letter->id));
+
+        $letter->refresh();
+        $this->assertSame('Perihal Diperbarui', $letter->perihal);
+    }
 }

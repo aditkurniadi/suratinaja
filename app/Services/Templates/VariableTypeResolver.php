@@ -37,8 +37,8 @@ class VariableTypeResolver
             }
             $seen[$name] = true;
 
-            // Ignore closing block tags like /BULK or #1 suffixes
-            if (str_starts_with($name, '/') || str_contains($name, '#')) {
+            // Ignore closing block tags like /BULK, internal __ tags, or #1 suffixes
+            if (str_starts_with($name, '/') || str_starts_with($name, '__') || str_contains($name, '#')) {
                 continue;
             }
 
@@ -96,18 +96,36 @@ class VariableTypeResolver
     }
 
     /**
-     * Returns only user-editable fields (excludes `system` type).
+     * Returns only user-editable fields (excludes `system` type, unless $includePerihal is true).
      *
      * @param  array<int, array<string, mixed>>  $schema
      * @return array<int, array<string, mixed>>
      */
-    public function editableFields(array $schema): array
+    public function editableFields(array $schema, bool $includePerihal = false): array
     {
-        return array_values(array_filter($schema, fn (array $f) => ($f['type'] ?? 'text') !== 'system'));
+        return array_values(array_map(function (array $f) {
+            if (($f['name'] ?? '') === 'perihal') {
+                $f['type'] = 'text';
+                $f['label'] = 'Perihal';
+            }
+
+            return $f;
+        }, array_filter($schema, function (array $f) use ($includePerihal) {
+            $type = $f['type'] ?? 'text';
+            $name = (string) ($f['name'] ?? '');
+
+            if ($includePerihal && $name === 'perihal') {
+                return true;
+            }
+
+            return $type !== 'system';
+        })));
     }
 
     public function humanize(string $identifier): string
     {
-        return Str::headline(str_replace(['.', '_', '-'], ' ', $identifier));
+        $label = Str::headline(str_replace(['.', '_', '-'], ' ', $identifier));
+
+        return preg_replace_callback('/\b(Nim|Nip|Nik|Hp|Id|Sk|Rt|Rw)\b/', fn ($m) => strtoupper($m[1]), $label) ?? $label;
     }
 }

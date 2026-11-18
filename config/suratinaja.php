@@ -23,8 +23,8 @@ return [
     'uploads' => [
         // TBD: logo file size limit in KB (FEATURES.md MOD-02 §3.2)
         'logo_max_kb' => (int) env('SURATINAJA_LOGO_MAX_KB', 2048),
-        // TBD: template max size in KB (PRD §5)
-        'template_max_kb' => (int) env('SURATINAJA_TEMPLATE_MAX_KB', 5120),
+        // TBD: template max size in KB (PRD §5) - 50 MB
+        'template_max_kb' => (int) env('SURATINAJA_TEMPLATE_MAX_KB', 51200),
         'recipients_max_kb' => 2048,
     ],
 
@@ -38,16 +38,70 @@ return [
         // TBD: empty repeater policy (FEATURES.md MOD-03 §4.4): 'delete_row' | 'blank_row'
         'empty_repeater' => env('SURATINAJA_EMPTY_REPEATER', 'delete_row'),
         // Variables filled automatically by the system (not shown in forms).
-        'system_variables' => ['nomor_surat', 'tanggal_surat', 'perihal'],
+        'system_variables' => [
+            'nomor_surat',
+            'tanggal_surat',
+            'perihal',
+            'kota_surat',
+            'jumlah_lampiran',
+            'hari_tanggal_kegiatan',
+            'waktu_kegiatan',
+            'ttd_kiri_jabatan',
+            'ttd_kiri_nama',
+            'ttd_kiri_id',
+            'ttd_kanan_jabatan',
+            'ttd_kanan_nama',
+            'ttd_kanan_id',
+            'signature_block',
+            'tanda_tangan',
+            'lampiran_no',
+            'lampiran_volume',
+        ],
     ],
 
     'numbering' => [
         // TBD: sequence reset policy (FEATURES.md MOD-04 §5.4): 'never' | 'yearly' | 'monthly'
         'reset' => env('SURATINAJA_NUMBER_RESET', 'never'),
-        'default_pattern' => '{seq}/{kode}/{bulan_romawi}/{tahun}',
+        'default_pattern' => '{seq}/{kategori}{parameter}/PAN-{kode_kegiatan}/{kode}/{bulan_romawi}/{tahun}',
         // TBD: default zero padding of {seq} (TASKS.md TASK-03)
         'default_padding' => 3,
         'retry_attempts' => 3,
+        'presets' => [
+            'himatris_kegiatan' => [
+                'name' => 'Format Kegiatan HIMATRIS (dengan Panitia Kegiatan)',
+                'pattern' => '{seq}/{kategori}{parameter}/PAN-{kode_kegiatan}/{kode}/{bulan_romawi}/{tahun}',
+                'example' => '001/SPm-i/PAN-JKBFEST/HIMATRIS/VII/2026',
+            ],
+            'himatris_organisasi' => [
+                'name' => 'Format Pengurus / Harian HIMATRIS (Non-Panitia)',
+                'pattern' => '{seq}/{kategori}{parameter}/{kode}/{bulan_romawi}/{tahun}',
+                'example' => '001/SU-i/HIMATRIS/VII/2026',
+            ],
+            'standar' => [
+                'name' => 'Format Standar Sederhana',
+                'pattern' => '{seq}/{kode}/{bulan_romawi}/{tahun}',
+                'example' => '001/HIMATRIS/VII/2026',
+            ],
+        ],
+    ],
+
+    'letter_types' => [
+        ['code' => 'MOU', 'name' => 'Surat Perjanjian / Memorandum of Understanding'],
+        ['code' => 'SK', 'name' => 'Surat Ketetapan / Keputusan'],
+        ['code' => 'SKet', 'name' => 'Surat Keterangan'],
+        ['code' => 'SP', 'name' => 'Surat Peringatan'],
+        ['code' => 'SPb', 'name' => 'Surat Pemberitahuan'],
+        ['code' => 'SPm', 'name' => 'Surat Permohonan'],
+        ['code' => 'SRmd', 'name' => 'Surat Rekomendasi'],
+        ['code' => 'STG', 'name' => 'Surat Tugas'],
+        ['code' => 'SU', 'name' => 'Surat Undangan'],
+        ['code' => 'Sert', 'name' => 'Sertifikat'],
+    ],
+
+    'letter_parameters' => [
+        ['code' => '-i', 'label' => 'Internal (-i)', 'description' => 'Untuk kalangan internal kampus / civitas'],
+        ['code' => '-e', 'label' => 'Eksternal (-e)', 'description' => 'Untuk instansi, perusahaan, atau pihak luar'],
+        ['code' => '', 'label' => 'Tanpa Parameter', 'description' => 'Tidak menggunakan akhiran parameter'],
     ],
 
     'letters' => [

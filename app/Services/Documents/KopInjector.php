@@ -12,13 +12,14 @@ class KopInjector
 {
     /**
      * If the workspace has a configured kop surat, validates logo files exist and injects
-     * a 3-column header table with double bottom rule at the top of `word/document.xml`.
+     * a 3-column header table with double bottom rule at the top of `word/document.xml`
+     * (and at the top of the Page 2 Lampiran section if present).
      *
      * @throws DomainException
      */
-    public function prepareTemplateCopy(string $workingDocxPath, Workspace $workspace): void
+    public function prepareTemplateCopy(string $workingDocxPath, Workspace $workspace, bool $hasEmbeddedKop = false): void
     {
-        if (! $workspace->hasKop()) {
+        if ($hasEmbeddedKop || ! $workspace->hasKop()) {
             return;
         }
 
@@ -36,8 +37,26 @@ class KopInjector
             throw DomainException::templateInvalid('Struktur word/document.xml tidak ditemukan.');
         }
 
-        $kopXml = $this->buildKopTableXml($workspace);
+        $kopXml = $this->buildKopTableXml($workspace, '__kop');
         $updated = preg_replace('/(<w:body[^>]*>)/', '$1'.$kopXml, $xml, 1);
+
+        if ($updated !== null && str_contains($updated, '${__lampiran_section_start}')) {
+            $kopPage2Xml = $this->buildKopTableXml($workspace, '__kop_p2');
+            $updated = preg_replace(
+                '/(<w:p\b[^>]*>(?:(?!<\/w:p>).)*\$\{__lampiran_section_start\}.*?<\/w:p>)/s',
+                '$1'.$kopPage2Xml,
+                $updated,
+                1
+            ) ?? $updated;
+        } elseif ($updated !== null && preg_match('/<w:br\b[^>]*w:type="page"/i', $updated)) {
+            $kopPage2Xml = $this->buildKopTableXml($workspace, '__kop_p2');
+            $updated = preg_replace(
+                '/(<w:p\b[^>]*>(?:(?!<\/w:p>).)*<w:br\b[^>]*w:type="page"[^>]*>.*?<\/w:p>)/is',
+                '$1'.$kopPage2Xml,
+                $updated,
+                1
+            ) ?? $updated;
+        }
 
         if ($updated !== null) {
             $zip->addFromString('word/document.xml', $updated);
@@ -49,43 +68,90 @@ class KopInjector
      * Populates the injected kop placeholders on a TemplateProcessor instance.
      * Supports optional `#index` suffix for cloned bulk blocks.
      */
-    public function applyValues(TemplateProcessor $processor, Workspace $workspace, string $suffix = ''): void
+    public function applyValues(TemplateProcessor $processor, Workspace $workspace, string $suffix = '', bool $hasEmbeddedKop = false): void
     {
-        if (! $workspace->hasKop()) {
+        if ($hasEmbeddedKop || ! $workspace->hasKop()) {
             return;
         }
 
-        $headerLines = preg_split('/\r\n|\r|\n/', (string) $workspace->kop_header_text) ?: [''];
-        $primaryHeader = trim($headerLines[0] ?? '');
-        $subHeader = trim(implode(' — ', array_slice($headerLines, 1)));
+        foreach (['__kop', '__kop_p2'] as $prefix) {
+            $lines = $this->headerLines($workspace);
+            foreach ($lines as $idx => $line) {
+                $processor->setValue("{$prefix}_header_line_{$idx}{$suffix}", mb_strtoupper($line));
+            }
 
-        $processor->setValue("__kop_header_main{$suffix}", $primaryHeader);
-        $processor->setValue("__kop_header_sub{$suffix}", $subHeader);
-        $processor->setValue("__kop_address{$suffix}", (string) ($workspace->kop_address ?? ''));
+            $addrLines = $this->addressLines($workspace);
+            foreach ($addrLines as $aIdx => $aLine) {
+                $processor->setValue("{$prefix}_address_line_{$aIdx}{$suffix}", $aLine);
+            }
 
-        if ($workspace->kop_logo_left) {
-            $leftPath = Storage::disk('local')->path($workspace->kop_logo_left);
-            $processor->setImageValue("__kop_logo_left{$suffix}", [
-                'path' => $leftPath,
-                'width' => 64,
-                'height' => 64,
-                'ratio' => true,
-            ]);
-        } else {
-            $processor->setValue("__kop_logo_left{$suffix}", '');
+            if ($workspace->kop_logo_left) {
+                $leftPath = Storage::disk('local')->path($workspace->kop_logo_left);
+                try {
+                    $processor->setImageValue("{$prefix}_logo_left{$suffix}", [
+                        'path' => $leftPath,
+                        'width' => 85,
+                        'height' => 85,
+                        'ratio' => true,
+                    ]);
+                } catch (\Throwable) {
+                    $processor->setValue("{$prefix}_logo_left{$suffix}", '');
+                }
+            } else {
+                $processor->setValue("{$prefix}_logo_left{$suffix}", '');
+            }
+
+            if ($workspace->kop_logo_right) {
+                $rightPath = Storage::disk('local')->path($workspace->kop_logo_right);
+                try {
+                    $processor->setImageValue("{$prefix}_logo_right{$suffix}", [
+                        'path' => $rightPath,
+                        'width' => 85,
+                        'height' => 85,
+                        'ratio' => true,
+                    ]);
+                } catch (\Throwable) {
+                    $processor->setValue("{$prefix}_logo_right{$suffix}", '');
+                }
+            } else {
+                $processor->setValue("{$prefix}_logo_right{$suffix}", '');
+            }
+        }
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    public function headerLines(Workspace $workspace): array
+    {
+        $rawLines = preg_split('/\r\n|\r|\n/', (string) $workspace->kop_header_text) ?: [];
+        $lines = array_values(array_filter(array_map('trim', $rawLines), fn (string $l) => $l !== ''));
+
+        return $lines !== [] ? $lines : [trim((string) $workspace->name)];
+    }
+
+    /**
+     * Splits workspace address into clean centered lines (matching official letter format:
+     * Street line, Telp/Fax line, Website/Email line).
+     *
+     * @return array<int, string>
+     */
+    public function addressLines(Workspace $workspace): array
+    {
+        $raw = trim((string) ($workspace->kop_address ?? ''));
+        if ($raw === '') {
+            return [];
         }
 
-        if ($workspace->kop_logo_right) {
-            $rightPath = Storage::disk('local')->path($workspace->kop_logo_right);
-            $processor->setImageValue("__kop_logo_right{$suffix}", [
-                'path' => $rightPath,
-                'width' => 64,
-                'height' => 64,
-                'ratio' => true,
-            ]);
-        } else {
-            $processor->setValue("__kop_logo_right{$suffix}", '');
+        if (str_contains($raw, "\n")) {
+            return array_values(array_filter(array_map('trim', preg_split('/\r\n|\r|\n/', $raw) ?: [])));
         }
+
+        // Split before "Telp:" and before "www." or "http" if on one single line
+        $formatted = preg_replace('/\s+(?=Telp\s*:)/i', "\n", $raw) ?? $raw;
+        $formatted = preg_replace('/\s+(?=(?:https?:\/\/|www\.))/i', "\n", $formatted) ?? $formatted;
+
+        return array_values(array_filter(array_map('trim', explode("\n", $formatted))));
     }
 
     private function assertLogoExists(?string $relativePath, string $side): void
@@ -103,11 +169,46 @@ class KopInjector
         }
     }
 
-    private function buildKopTableXml(Workspace $workspace): string
+    public function buildKopTableXml(Workspace $workspace, string $prefix = '__kop'): string
     {
+        $lines = $this->headerLines($workspace);
+        $hasHimpunanLine = collect($lines)->contains(fn (string $l) => stripos($l, 'HIMPUNAN') !== false);
+
+        $centerParagraphs = '';
+        foreach ($lines as $idx => $line) {
+            $isBold = count($lines) <= 2
+                ? true
+                : ($hasHimpunanLine ? stripos($line, 'HIMPUNAN') !== false : $idx === 0);
+
+            $sz = count($lines) > 2 ? '26' : ($idx === 0 ? '26' : '22');
+            $boldXml = $isBold ? '<w:b/><w:bCs/>' : '';
+
+            $centerParagraphs .= '<w:p>'
+                .'<w:pPr><w:spacing w:before="0" w:after="10" w:line="240" w:lineRule="auto"/><w:jc w:val="center"/></w:pPr>'
+                .'<w:r><w:rPr>'.$boldXml.'<w:sz w:val="'.$sz.'"/><w:szCs w:val="'.$sz.'"/></w:rPr>'
+                .'<w:t>${'.$prefix.'_header_line_'.$idx.'}</w:t></w:r>'
+                .'</w:p>';
+        }
+
+        $addrLines = $this->addressLines($workspace);
+        foreach ($addrLines as $aIdx => $aLine) {
+            $after = ($aIdx === count($addrLines) - 1) ? '40' : '10';
+            $centerParagraphs .= '<w:p>'
+                .'<w:pPr><w:spacing w:before="0" w:after="'.$after.'" w:line="220" w:lineRule="auto"/><w:jc w:val="center"/></w:pPr>'
+                .'<w:r><w:rPr><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr><w:t>${'.$prefix.'_address_line_'.$aIdx.'}</w:t></w:r>'
+                .'</w:p>';
+        }
+
         return '<w:tbl>'
             .'<w:tblPr>'
             .'<w:tblW w:w="5000" w:type="pct"/>'
+            .'<w:tblLayout w:type="fixed"/>'
+            .'<w:tblCellMar>'
+            .'<w:top w:w="0" w:type="dxa"/>'
+            .'<w:left w:w="40" w:type="dxa"/>'
+            .'<w:bottom w:w="80" w:type="dxa"/>'
+            .'<w:right w:w="40" w:type="dxa"/>'
+            .'</w:tblCellMar>'
             .'<w:tblBorders>'
             .'<w:top w:val="none" w:sz="0" w:space="0" w:color="auto"/>'
             .'<w:left w:val="none" w:sz="0" w:space="0" w:color="auto"/>'
@@ -117,20 +218,23 @@ class KopInjector
             .'<w:insideV w:val="none" w:sz="0" w:space="0" w:color="auto"/>'
             .'</w:tblBorders>'
             .'</w:tblPr>'
+            .'<w:tblGrid>'
+            .'<w:gridCol w:w="1400" w:type="dxa"/>'
+            .'<w:gridCol w:w="6220" w:type="dxa"/>'
+            .'<w:gridCol w:w="1400" w:type="dxa"/>'
+            .'</w:tblGrid>'
             .'<w:tr>'
-            .'<w:tc><w:tcPr><w:tcW w:w="800" w:type="pct"/></w:tcPr>'
-            .'<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t>${__kop_logo_left}</w:t></w:r></w:p>'
+            .'<w:tc><w:tcPr><w:tcW w:w="780" w:type="pct"/><w:vAlign w:val="center"/></w:tcPr>'
+            .'<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="auto"/><w:jc w:val="center"/></w:pPr><w:r><w:t>${'.$prefix.'_logo_left}</w:t></w:r></w:p>'
             .'</w:tc>'
-            .'<w:tc><w:tcPr><w:tcW w:w="3400" w:type="pct"/></w:tcPr>'
-            .'<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/><w:sz w:val="26"/></w:rPr><w:t>${__kop_header_main}</w:t></w:r></w:p>'
-            .'<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:b/><w:sz w:val="22"/></w:rPr><w:t>${__kop_header_sub}</w:t></w:r></w:p>'
-            .'<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:rPr><w:sz w:val="18"/></w:rPr><w:t>${__kop_address}</w:t></w:r></w:p>'
+            .'<w:tc><w:tcPr><w:tcW w:w="3440" w:type="pct"/><w:vAlign w:val="center"/></w:tcPr>'
+            .$centerParagraphs
             .'</w:tc>'
-            .'<w:tc><w:tcPr><w:tcW w:w="800" w:type="pct"/></w:tcPr>'
-            .'<w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t>${__kop_logo_right}</w:t></w:r></w:p>'
+            .'<w:tc><w:tcPr><w:tcW w:w="780" w:type="pct"/><w:vAlign w:val="center"/></w:tcPr>'
+            .'<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="auto"/><w:jc w:val="center"/></w:pPr><w:r><w:t>${'.$prefix.'_logo_right}</w:t></w:r></w:p>'
             .'</w:tc>'
             .'</w:tr>'
             .'</w:tbl>'
-            .'<w:p/>';
+            .'<w:p><w:pPr><w:spacing w:before="40" w:after="40"/></w:pPr></w:p>';
     }
 }

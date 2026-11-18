@@ -21,6 +21,7 @@ class LetterTemplate extends Model
         'description',
         'file_path',
         'variables_schema',
+        'has_embedded_kop',
         'version',
         'source_template_id',
         'is_deprecated',
@@ -32,6 +33,7 @@ class LetterTemplate extends Model
         return [
             'scope' => TemplateScope::class,
             'variables_schema' => 'array',
+            'has_embedded_kop' => 'boolean',
             'version' => 'integer',
             'is_deprecated' => 'boolean',
         ];
@@ -70,9 +72,19 @@ class LetterTemplate extends Model
         return $this->hasMany(Letter::class, 'template_id');
     }
 
+    public function bulkJobs(): HasMany
+    {
+        return $this->hasMany(BulkJob::class, 'template_id');
+    }
+
     public function isGlobal(): bool
     {
         return $this->scope === TemplateScope::Global;
+    }
+
+    public function hasEmbeddedKop(): bool
+    {
+        return (bool) $this->has_embedded_kop;
     }
 
     public function isAccessibleBy(Workspace $workspace): bool

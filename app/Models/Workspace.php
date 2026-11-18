@@ -20,8 +20,13 @@ class Workspace extends Model
         'kop_logo_right',
         'kop_header_text',
         'kop_address',
+        'default_city',
+        'signers_config',
         'number_pattern',
         'number_code',
+        'activity_code',
+        'is_activity',
+        'letter_types_config',
         'seq_padding',
     ];
 
@@ -29,7 +34,19 @@ class Workspace extends Model
     {
         return [
             'seq_padding' => 'integer',
+            'is_activity' => 'boolean',
+            'signers_config' => 'array',
+            'letter_types_config' => 'array',
         ];
+    }
+
+    public function letterTypes(): array
+    {
+        if (is_array($this->letter_types_config) && count($this->letter_types_config) > 0) {
+            return $this->letter_types_config;
+        }
+
+        return config('suratinaja.letter_types', []);
     }
 
     protected static function booted(): void
@@ -115,5 +132,100 @@ class Workspace extends Model
             || filled($this->kop_address)
             || filled($this->kop_logo_left)
             || filled($this->kop_logo_right);
+    }
+
+    /**
+     * @return array<string, array{name: string, signers: array<int, array{prefix: string, position: string, name: string, id_label: string, id_number: string, layout: string}>}>
+     */
+    public static function signerPresets(): array
+    {
+        return [
+            '2_signers' => [
+                'name' => '2 Penandatangan (Ketua & Ketuplak)',
+                'signers' => [
+                    [
+                        'prefix' => '',
+                        'position' => 'Ketua HIMATRIS,',
+                        'name' => 'Dimas Surya Pratama',
+                        'id_label' => 'NIM.',
+                        'id_number' => '25.01.09.044',
+                        'layout' => 'auto',
+                    ],
+                    [
+                        'prefix' => '',
+                        'position' => 'Ketua Pelaksana,',
+                        'name' => 'Karisma Putri Isabela',
+                        'id_label' => 'NIM.',
+                        'id_number' => '25.03.15.020',
+                        'layout' => 'auto',
+                    ],
+                ],
+            ],
+            '5_signers' => [
+                'name' => '5 Penandatangan (Lengkap Bertingkat)',
+                'signers' => [
+                    [
+                        'prefix' => '',
+                        'position' => 'Ketua HIMATRIS,',
+                        'name' => 'Dimas Surya Pratama',
+                        'id_label' => 'NIM.',
+                        'id_number' => '25.01.09.044',
+                        'layout' => 'auto',
+                    ],
+                    [
+                        'prefix' => '',
+                        'position' => 'Ketua Pelaksana,',
+                        'name' => 'Karisma Putri Isabela',
+                        'id_label' => 'NIM.',
+                        'id_number' => '25.03.15.020',
+                        'layout' => 'auto',
+                    ],
+                    [
+                        'prefix' => 'Menyetujui,',
+                        'position' => 'Koordinator Prodi,',
+                        'name' => 'Lutfi Syafirullah, S.T., M.Kom.',
+                        'id_label' => 'NIP.',
+                        'id_number' => '19841121202421 1 009',
+                        'layout' => 'auto',
+                    ],
+                    [
+                        'prefix' => '',
+                        'position' => 'Pembina HIMATRIS,',
+                        'name' => 'Lutfi Syafirullah, S.T., M.Kom.',
+                        'id_label' => 'NIP.',
+                        'id_number' => '19841121202421 1 009',
+                        'layout' => 'auto',
+                    ],
+                    [
+                        'prefix' => 'Mengetahui,',
+                        'position' => 'Ketua Jurusan Komputer & Bisnis,',
+                        'name' => 'Dwi Novia Prasetyanti, S.Kom., M.Cs.',
+                        'id_label' => 'NIP.',
+                        'id_number' => '19791119 202121 2 009',
+                        'layout' => 'auto',
+                    ],
+                ],
+            ],
+        ];
+    }
+
+    /**
+     * @return array<int, array{prefix: string, position: string, name: string, id_label: string, id_number: string, layout: string}>
+     */
+    public function defaultSigners(): array
+    {
+        $configured = $this->signers_config;
+        if (is_array($configured) && count($configured) > 0) {
+            return array_values(array_map(fn (array $s) => [
+                'prefix' => (string) ($s['prefix'] ?? ''),
+                'position' => (string) ($s['position'] ?? ''),
+                'name' => (string) ($s['name'] ?? ''),
+                'id_label' => (string) ($s['id_label'] ?? 'NIP.'),
+                'id_number' => (string) ($s['id_number'] ?? ''),
+                'layout' => (string) ($s['layout'] ?? 'auto'),
+            ], $configured));
+        }
+
+        return static::signerPresets()['2_signers']['signers'];
     }
 }

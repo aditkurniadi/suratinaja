@@ -87,7 +87,14 @@
                                         @endif
                                     </td>
                                     <td class="py-2.5 px-3 text-muted-foreground hidden md:table-cell">
-                                        {{ $letter->template?->name ?? '—' }}
+                                        @if ($letter->is_manual_number)
+                                            <span class="inline-flex items-center gap-1 text-[11px] font-medium text-blue-600 dark:text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded">
+                                                <x-lucide-external-link class="size-3" />
+                                                <span>Dokumen Eksternal</span>
+                                            </span>
+                                        @else
+                                            {{ $letter->template?->name ?? '—' }}
+                                        @endif
                                     </td>
                                     <td class="py-2.5 px-3">
                                         <x-ui.status-badge :status="$letter->status" />

@@ -5,7 +5,14 @@
         <x-ui.card class="lg:col-span-5">
             <x-ui.card-header class="border-b border-border pb-4 space-y-2">
                 <div class="flex items-center justify-between gap-2">
-                    <x-ui.status-badge :status="$letter->status" />
+                    <div class="flex items-center gap-2">
+                        <x-ui.status-badge :status="$letter->status" />
+                        @if ($letter->is_manual_number)
+                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20">
+                                Dokumen Eksternal / Drive
+                            </span>
+                        @endif
+                    </div>
                     <span class="font-mono text-xs text-muted-foreground">Versi v{{ $letter->version }}</span>
                 </div>
                 <x-ui.card-title class="break-words">{{ $letter->perihal }}</x-ui.card-title>
@@ -46,7 +53,7 @@
                 <div class="space-y-2">
                     <h3 class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Nilai Variabel (${...})</h3>
                     <div class="rounded-lg border border-border divide-y divide-border text-xs">
-                        @forelse ($letter->field_values ?? [] as $k => $v)
+                        @forelse (collect($letter->field_values ?? [])->reject(fn ($v, $k) => str_starts_with((string) $k, '_')) as $k => $v)
                             <div class="flex items-start justify-between gap-3 px-3 py-2">
                                 <code class="font-mono text-muted-foreground">${{ '{' . $k . '}' }}</code>
                                 <div class="text-right font-medium break-all">
@@ -63,14 +70,50 @@
                     </div>
                 </div>
 
+                @php
+                    $letterSigners = is_array($letter->field_values['_signers'] ?? null) && count($letter->field_values['_signers']) > 0
+                        ? $letter->field_values['_signers']
+                        : ($workspace ? $workspace->defaultSigners() : []);
+                @endphp
+                @if (count($letterSigners) > 0)
+                    <div class="space-y-2">
+                        <h3 class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Penandatangan (TTD)</h3>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                            @foreach ($letterSigners as $sig)
+                                <div class="rounded-lg border border-border p-2.5 space-y-0.5 bg-muted/20">
+                                    <p class="text-muted-foreground">{{ $sig['position'] ?? '' }}</p>
+                                    <p class="font-semibold underline">{{ $sig['name'] ?? '' }}</p>
+                                    @if (!empty($sig['id_number']))
+                                        <p class="font-mono text-[11px] text-muted-foreground">{{ trim(($sig['id_label'] ?? '') . ' ' . $sig['id_number']) }}</p>
+                                    @endif
+                                </div>
+                            @endforeach
+                        </div>
+                    </div>
+                @endif
+
                 <x-ui.separator />
 
                 {{-- Action buttons --}}
                 <div class="flex flex-wrap gap-2">
-                    <x-ui.button size="sm" variant="outline" :href="route('letters.download', $letter->id)">
-                        <x-lucide-download class="size-4" />
-                        <span>Unduh .docx</span>
-                    </x-ui.button>
+                    @if ($letter->link_drive)
+                        <x-ui.button as="a" href="{{ $letter->link_drive }}" target="_blank" size="sm" class="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white">
+                            <x-lucide-external-link class="size-4" />
+                            <span>Buka di Google Drive</span>
+                        </x-ui.button>
+                    @endif
+
+                    @if (! $letter->is_manual_number)
+                        <x-ui.button size="sm" variant="outline" :href="route('letters.download', $letter->id)">
+                            <x-lucide-download class="size-4" />
+                            <span>Unduh .docx</span>
+                        </x-ui.button>
+
+                        <x-ui.button size="sm" variant="outline" :href="route('letters.preview-pdf', ['letter' => $letter->id, 'download' => 1])">
+                            <x-lucide-file-down class="size-4" />
+                            <span>Unduh .pdf</span>
+                        </x-ui.button>
+                    @endif
 
                     @if ($role?->canWrite())
                         @if ($letter->status === \App\Enums\LetterStatus::Draft)
@@ -100,6 +143,13 @@
                             <x-lucide-copy class="size-4" />
                             <span>Duplikasi</span>
                         </x-ui.button>
+
+                        @if ($letter->status !== \App\Enums\LetterStatus::Dibatalkan)
+                            <x-ui.button size="sm" variant="outline" :href="route('bulk.index', ['from_letter' => $letter->id])">
+                                <x-lucide-layers class="size-4" />
+                                <span>Buat Surat Masal (Bulk)</span>
+                            </x-ui.button>
+                        @endif
 
                         @if ($letter->status !== \App\Enums\LetterStatus::Dibatalkan)
                             <x-ui.button size="sm" variant="destructive" wire:click="$set('showCancelModal', true)">
@@ -143,19 +193,46 @@
 
             <x-ui.card-content class="pt-4 space-y-6">
                 @if ($activeRightTab === 'preview')
-                    <div class="space-y-3">
-                        <div class="flex items-center justify-between text-xs text-muted-foreground">
-                            <span>Pratinjau PDF (dikonversi via Gotenberg LibreOffice)</span>
-                            <a href="{{ route('letters.preview-pdf', $letter->id) }}" target="_blank" class="underline hover:text-foreground">
-                                Buka di Tab Baru
-                            </a>
+                    @if ($letter->is_manual_number)
+                        <div class="rounded-xl border border-border p-8 text-center space-y-4 bg-muted/10">
+                            <div class="mx-auto size-12 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center">
+                                <x-lucide-external-link class="size-6" />
+                            </div>
+                            <div class="space-y-1">
+                                <h3 class="text-base font-semibold text-foreground">Surat Eksternal (Ambil Nomor)</h3>
+                                <p class="text-xs text-muted-foreground max-w-md mx-auto">
+                                    Dokumen ini dibuat di luar sistem SuratinAja dengan nomor urut resmi yang terdaftar dan tercatat di database.
+                                </p>
+                            </div>
+                            @if ($letter->link_drive)
+                                <div class="pt-2">
+                                    <x-ui.button as="a" href="{{ $letter->link_drive }}" target="_blank" class="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white">
+                                        <x-lucide-external-link class="size-4" />
+                                        <span>Buka Dokumen di Google Drive</span>
+                                    </x-ui.button>
+                                </div>
+                            @endif
                         </div>
-                        <iframe
-                            src="{{ route('letters.preview-pdf', $letter->id) }}"
-                            class="w-full h-[560px] rounded-lg border border-border bg-muted/30"
-                            title="Pratinjau PDF Surat"
-                        ></iframe>
-                    </div>
+                    @else
+                        <div class="space-y-3">
+                            <div class="flex items-center justify-between text-xs text-muted-foreground">
+                                <span>Pratinjau Dokumen PDF (A4 — Margin Normal 2,54 cm)</span>
+                                <div class="flex items-center gap-3">
+                                    <a href="{{ route('letters.preview-pdf', ['letter' => $letter->id, 'download' => 1]) }}" class="underline hover:text-foreground font-medium">
+                                        Unduh PDF
+                                    </a>
+                                    <a href="{{ route('letters.preview-pdf', $letter->id) }}" target="_blank" class="underline hover:text-foreground">
+                                        Buka di Tab Baru
+                                    </a>
+                                </div>
+                            </div>
+                            <iframe
+                                src="{{ route('letters.preview-pdf', $letter->id) }}"
+                                class="w-full h-[560px] rounded-lg border border-border bg-muted/30"
+                                title="Pratinjau PDF Surat"
+                            ></iframe>
+                        </div>
+                    @endif
                 @else
                     {{-- Number chain (AKTIF & HANGUS) --}}
                     <div class="space-y-3">

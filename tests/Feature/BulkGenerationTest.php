@@ -146,4 +146,114 @@ class BulkGenerationTest extends TestCase
             ->assertStatus(422)
             ->assertJsonPath('error.code', 'BULK_JOB_FAILED');
     }
+
+    public function test_bulk_generator_livewire_supports_custom_varying_fields_and_toggling(): void
+    {
+        [$ws, $sec] = $this->setupWorkspace();
+
+        $customTpl = LetterTemplate::withoutGlobalScopes()->create([
+            'workspace_id' => $ws->id,
+            'scope' => TemplateScope::Workspace,
+            'name' => 'Template Undangan Dosen Khusus',
+            'file_path' => 'templates/test/bulk-tpl.docx',
+            'variables_schema' => [
+                ['name' => 'tujuan', 'type' => 'text', 'label' => 'Nama Dosen / Tujuan'],
+                ['name' => 'instansi', 'type' => 'text', 'label' => 'Instansi / Jurusan'],
+                ['name' => 'lampiran', 'type' => 'text', 'label' => 'Lampiran'],
+                ['name' => 'saya', 'type' => 'text', 'label' => 'Saya'],
+            ],
+            'version' => 1,
+        ]);
+
+        \Livewire\Livewire::actingAs($sec)
+            ->test(\App\Livewire\Bulk\BulkGenerator::class)
+            ->set('templateId', $customTpl->id)
+            ->assertSet('varyingFieldNames', ['tujuan', 'instansi'])
+            ->assertSee('(${tujuan})')
+            ->assertSee('(${instansi})')
+            ->assertSee('(${lampiran})')
+            ->call('toggleVaryingField', 'lampiran')
+            ->assertSet('varyingFieldNames', ['tujuan', 'instansi', 'lampiran'])
+            ->call('toggleVaryingField', 'lampiran')
+            ->assertSet('varyingFieldNames', ['tujuan', 'instansi'])
+            ->set('perihal', 'Undangan Rapat Dosen')
+            ->set('manualRows', [
+                ['tujuan' => 'Dr. Budi Santoso, M.Kom.', 'instansi' => 'Fakultas Teknik'],
+                ['tujuan' => 'Ir. Siti Aminah, M.T.', 'instansi' => 'Fakultas Sains'],
+            ])
+            ->call('startBulk')
+            ->assertHasNoErrors()
+            ->assertDispatched('toast');
+
+        $job = BulkJob::withoutGlobalScopes()->latest()->first();
+        $this->assertNotNull($job);
+        $this->assertSame(2, $job->recipient_count);
+        $this->assertSame('Dr. Budi Santoso, M.Kom.', $job->recipients[0]['tujuan']);
+    }
+
+    public function test_bulk_generator_livewire_syncs_perihal_on_template_change_and_supports_source_letter(): void
+    {
+        [$ws, $sec, $tpl1] = $this->setupWorkspace();
+
+        $tpl2 = LetterTemplate::withoutGlobalScopes()->create([
+            'workspace_id' => $ws->id,
+            'scope' => TemplateScope::Workspace,
+            'name' => 'Template Undangan Dosen V1',
+            'file_path' => 'templates/test/bulk-tpl.docx',
+            'variables_schema' => [
+                ['name' => 'perihal', 'type' => 'system', 'label' => 'Perihal'],
+                ['name' => 'tujuan', 'type' => 'text', 'label' => 'Tujuan'],
+                ['name' => 'instansi', 'type' => 'text', 'label' => 'Instansi'],
+                ['name' => 'saya', 'type' => 'text', 'label' => 'Saya'],
+            ],
+            'version' => 1,
+        ]);
+
+        // 1. Test updating template changes perihal automatically
+        $component = \Livewire\Livewire::actingAs($sec)
+            ->test(\App\Livewire\Bulk\BulkGenerator::class)
+            ->set('templateId', $tpl2->id)
+            ->assertSet('perihal', 'Template Undangan Dosen V1')
+            ->assertSee('(${perihal})');
+
+        // 2. Test source letter prefilling
+        $sourceLetter = \App\Models\Letter::withoutGlobalScopes()->create([
+            'workspace_id' => $ws->id,
+            'template_id' => $tpl2->id,
+            'created_by' => $sec->id,
+            'perihal' => 'OASIS Muda JKB',
+            'letter_date' => '2026-11-20',
+            'status' => \App\Enums\LetterStatus::Draft,
+            'field_values' => [
+                'saya' => 'Panitia OASIS',
+                'lampiran' => 'Dua (2) berkas',
+            ],
+            'version' => 1,
+        ]);
+
+        $component->set('sourceLetterId', $sourceLetter->id)
+            ->assertSet('perihal', 'OASIS Muda JKB')
+            ->assertSet('letterDate', '2026-11-20')
+            ->assertSet('templateId', $tpl2->id)
+            ->assertSet('sharedVariables.saya', 'Panitia OASIS');
+
+        // 3. Test bulk execution creates letters with correct perihal and field_values['perihal']
+        $component->set('manualRows', [
+            ['tujuan' => 'Dr. Budi Santoso, M.Kom.', 'instansi' => 'Fakultas Teknik'],
+            ['tujuan' => 'Ir. Siti Aminah, M.T.', 'instansi' => 'Fakultas Sains'],
+        ])
+            ->call('startBulk')
+            ->assertHasNoErrors();
+
+        $generatedLetters = \App\Models\Letter::withoutGlobalScopes()
+            ->where('bulk_job_id', '!=', null)
+            ->get();
+
+        $this->assertCount(2, $generatedLetters);
+        foreach ($generatedLetters as $l) {
+            $this->assertSame('OASIS Muda JKB', $l->perihal);
+            $this->assertSame('OASIS Muda JKB', $l->field_values['perihal']);
+            $this->assertSame('Panitia OASIS', $l->field_values['saya']);
+        }
+    }
 }

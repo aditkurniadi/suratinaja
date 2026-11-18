@@ -43,6 +43,7 @@ class DuplicateTemplateAction
             'description' => $source->description,
             'file_path' => $targetPath,
             'variables_schema' => $source->variables_schema ?? [],
+            'has_embedded_kop' => (bool) $source->has_embedded_kop,
             'version' => 1,
             'source_template_id' => $source->id,
             'is_deprecated' => false,

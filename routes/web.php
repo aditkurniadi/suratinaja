@@ -63,6 +63,7 @@ Route::middleware(['auth', 'workspace.active'])->group(function () {
 
     Route::get('/settings/kop', KopBuilder::class)->name('settings.kop');
     Route::get('/settings/numbering', NumberingSettings::class)->name('settings.numbering');
+    Route::get('/settings/letter-types', \App\Livewire\Settings\LetterTypesSettings::class)->name('settings.letter-types');
     Route::get('/settings/members', MembersIndex::class)->name('settings.members');
 
     Route::get('/admin/global-templates', GlobalTemplatesIndex::class)->name('admin.global-templates');
