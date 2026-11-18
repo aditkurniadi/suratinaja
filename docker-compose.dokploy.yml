@@ -17,7 +17,7 @@ services:
       DB_PORT: "${DB_PORT:-3306}"
       DB_DATABASE: "${DB_DATABASE:-suratinaja}"
       DB_USERNAME: "${DB_USERNAME:-suratinaja}"
-      DB_PASSWORD: "${DB_PASSWORD}"
+      DB_PASSWORD: "${DB_PASSWORD:-secret}"
       QUEUE_CONNECTION: database
       SESSION_DRIVER: database
       CACHE_STORE: database
@@ -50,7 +50,7 @@ services:
       DB_PORT: "${DB_PORT:-3306}"
       DB_DATABASE: "${DB_DATABASE:-suratinaja}"
       DB_USERNAME: "${DB_USERNAME:-suratinaja}"
-      DB_PASSWORD: "${DB_PASSWORD}"
+      DB_PASSWORD: "${DB_PASSWORD:-secret}"
       QUEUE_CONNECTION: database
       GOTENBERG_URL: "http://gotenberg:3000"
     volumes:
@@ -76,7 +76,7 @@ services:
       DB_PORT: "${DB_PORT:-3306}"
       DB_DATABASE: "${DB_DATABASE:-suratinaja}"
       DB_USERNAME: "${DB_USERNAME:-suratinaja}"
-      DB_PASSWORD: "${DB_PASSWORD}"
+      DB_PASSWORD: "${DB_PASSWORD:-secret}"
     volumes:
       - suratinaja-storage:/var/www/html/storage
     networks:
@@ -99,17 +99,18 @@ services:
     environment:
       MYSQL_DATABASE: "${DB_DATABASE:-suratinaja}"
       MYSQL_USER: "${DB_USERNAME:-suratinaja}"
-      MYSQL_PASSWORD: "${DB_PASSWORD}"
+      MYSQL_PASSWORD: "${DB_PASSWORD:-secret}"
       MYSQL_ROOT_PASSWORD: "${DB_ROOT_PASSWORD:-rootpassword123}"
     volumes:
       - suratinaja-mysql:/var/lib/mysql
     networks:
       - suratinaja-internal
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "--silent"]
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$${MYSQL_ROOT_PASSWORD:-rootpassword123} --silent || mysqladmin ping -h 127.0.0.1 -u$${MYSQL_USER:-suratinaja} -p$${MYSQL_PASSWORD:-secret} --silent || exit 1"]
       interval: 5s
       timeout: 5s
-      retries: 10
+      retries: 30
+      start_period: 30s
 
 volumes:
   suratinaja-storage:
