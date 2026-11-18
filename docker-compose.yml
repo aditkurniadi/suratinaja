@@ -6,6 +6,8 @@ services:
     restart: unless-stopped
     ports:
       - "${DOCKER_APP_PORT:-8000}:8080"
+    expose:
+      - "8080"
     env_file:
       - path: .env
         required: false
@@ -15,23 +17,21 @@ services:
       APP_DEBUG: "${APP_DEBUG:-false}"
       APP_KEY: "${APP_KEY:-base64:O308AMZodXAdU1Yc6QQD9ZtYIn0coNYxlF+noDl8Cro=}"
       APP_URL: "${APP_URL:-http://127.0.0.1:8000}"
-      DB_CONNECTION: mysql
-      DB_HOST: mysql
-      DB_PORT: 3306
+      DB_CONNECTION: "${DB_CONNECTION:-mysql}"
+      DB_HOST: "${DB_HOST:-43.156.64.105}"
+      DB_PORT: "${DB_PORT:-20129}"
       DB_DATABASE: "${DB_DATABASE:-suratinaja}"
-      DB_USERNAME: "${DB_USERNAME:-suratinaja}"
-      DB_PASSWORD: "${DB_PASSWORD:-secret}"
+      DB_USERNAME: "${DB_USERNAME:-root}"
+      DB_PASSWORD: "${DB_PASSWORD:-}"
       QUEUE_CONNECTION: database
       SESSION_DRIVER: database
       CACHE_STORE: database
       GOTENBERG_URL: "${GOTENBERG_URL:-http://gotenberg:3000}"
-      SUPERADMIN_EMAIL: "${SUPERADMIN_EMAIL:-admin@himatris.org}"
-      SUPERADMIN_PASSWORD: "${SUPERADMIN_PASSWORD:-password}"
+      SUPERADMIN_EMAIL: "${SUPERADMIN_EMAIL:-admin@organisasi.id}"
+      SUPERADMIN_PASSWORD: "${SUPERADMIN_PASSWORD:-PasswordKuat123!}"
     volumes:
       - suratinaja-storage:/var/www/html/storage
     depends_on:
-      mysql:
-        condition: service_healthy
       gotenberg:
         condition: service_started
 
@@ -48,19 +48,19 @@ services:
       APP_NAME: "${APP_NAME:-SuratinAja}"
       APP_ENV: "${APP_ENV:-production}"
       APP_KEY: "${APP_KEY:-base64:O308AMZodXAdU1Yc6QQD9ZtYIn0coNYxlF+noDl8Cro=}"
-      DB_CONNECTION: mysql
-      DB_HOST: mysql
-      DB_PORT: 3306
+      DB_CONNECTION: "${DB_CONNECTION:-mysql}"
+      DB_HOST: "${DB_HOST:-43.156.64.105}"
+      DB_PORT: "${DB_PORT:-20129}"
       DB_DATABASE: "${DB_DATABASE:-suratinaja}"
-      DB_USERNAME: "${DB_USERNAME:-suratinaja}"
-      DB_PASSWORD: "${DB_PASSWORD:-secret}"
+      DB_USERNAME: "${DB_USERNAME:-root}"
+      DB_PASSWORD: "${DB_PASSWORD:-}"
       QUEUE_CONNECTION: database
       GOTENBERG_URL: "${GOTENBERG_URL:-http://gotenberg:3000}"
     volumes:
       - suratinaja-storage:/var/www/html/storage
     depends_on:
-      mysql:
-        condition: service_healthy
+      gotenberg:
+        condition: service_started
 
   scheduler:
     build:
@@ -75,17 +75,14 @@ services:
       APP_NAME: "${APP_NAME:-SuratinAja}"
       APP_ENV: "${APP_ENV:-production}"
       APP_KEY: "${APP_KEY:-base64:O308AMZodXAdU1Yc6QQD9ZtYIn0coNYxlF+noDl8Cro=}"
-      DB_CONNECTION: mysql
-      DB_HOST: mysql
-      DB_PORT: 3306
+      DB_CONNECTION: "${DB_CONNECTION:-mysql}"
+      DB_HOST: "${DB_HOST:-43.156.64.105}"
+      DB_PORT: "${DB_PORT:-20129}"
       DB_DATABASE: "${DB_DATABASE:-suratinaja}"
-      DB_USERNAME: "${DB_USERNAME:-suratinaja}"
-      DB_PASSWORD: "${DB_PASSWORD:-secret}"
+      DB_USERNAME: "${DB_USERNAME:-root}"
+      DB_PASSWORD: "${DB_PASSWORD:-}"
     volumes:
       - suratinaja-storage:/var/www/html/storage
-    depends_on:
-      mysql:
-        condition: service_healthy
 
   gotenberg:
     image: gotenberg/gotenberg:8
@@ -93,23 +90,5 @@ services:
     expose:
       - "3000"
 
-  mysql:
-    image: mysql:8.0
-    restart: unless-stopped
-    environment:
-      MYSQL_DATABASE: "${DB_DATABASE:-suratinaja}"
-      MYSQL_USER: "${DB_USERNAME:-suratinaja}"
-      MYSQL_PASSWORD: "${DB_PASSWORD:-secret}"
-      MYSQL_ROOT_PASSWORD: "${DB_ROOT_PASSWORD:-rootsecret}"
-    volumes:
-      - suratinaja-mysql:/var/lib/mysql
-    healthcheck:
-      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$${MYSQL_ROOT_PASSWORD:-rootsecret} --silent || mysqladmin ping -h 127.0.0.1 -u$${MYSQL_USER:-suratinaja} -p$${MYSQL_PASSWORD:-secret} --silent || exit 1"]
-      interval: 5s
-      timeout: 5s
-      retries: 30
-      start_period: 30s
-
 volumes:
   suratinaja-storage:
-  suratinaja-mysql:
