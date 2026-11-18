@@ -55,14 +55,13 @@ APP_URL=https://surat.domainanda.com
 # Generate kunci ini via terminal (php artisan key:generate --show) atau biarkan Dokploy generate
 APP_KEY=base64:O308AMZodXAdU1Yc6QQD9ZtYIn0coNYxlF+noDl8Cro=
 
-# Database Settings
+# Database External / Dokploy Database
 DB_CONNECTION=mysql
-DB_HOST=mysql
-DB_PORT=3306
+DB_HOST=43.156.64.105
+DB_PORT=20129
 DB_DATABASE=suratinaja
-DB_USERNAME=suratinaja
-DB_PASSWORD=GantiDenganPasswordDatabaseAman123!
-DB_ROOT_PASSWORD=GantiDenganPasswordRootAman123!
+DB_USERNAME=root
+DB_PASSWORD=
 
 # Storage, Cache & Queue
 FILESYSTEM_DISK=public
