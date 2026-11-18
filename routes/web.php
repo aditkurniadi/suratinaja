@@ -1,0 +1,97 @@
+<?php
+
+use App\Http\Controllers\Api\V1\BulkLetterController;
+use App\Http\Controllers\Api\V1\LetterController;
+use App\Http\Controllers\LetterDocumentController;
+use App\Livewire\Admin\GlobalTemplatesIndex;
+use App\Livewire\Auth\Login;
+use App\Livewire\Auth\Register;
+use App\Livewire\Bulk\BulkGenerator;
+use App\Livewire\Dashboard;
+use App\Livewire\Letters\LetterComposer;
+use App\Livewire\Letters\LetterShow;
+use App\Livewire\Letters\LettersIndex;
+use App\Livewire\Settings\KopBuilder;
+use App\Livewire\Settings\MembersIndex;
+use App\Livewire\Settings\NumberingSettings;
+use App\Livewire\Templates\TemplatesIndex;
+use App\Livewire\Workspaces\AcceptInvitation;
+use App\Livewire\Workspaces\Onboarding;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Route;
+
+Route::get('/', function () {
+    return auth()->check()
+        ? redirect()->route('dashboard')
+        : redirect()->route('login');
+});
+
+Route::middleware('guest')->group(function () {
+    Route::get('/login', Login::class)->name('login');
+    Route::get('/register', Register::class)->name('register');
+});
+
+Route::post('/logout', function (Request $request) {
+    Auth::guard('web')->logout();
+    $request->session()->invalidate();
+    $request->session()->regenerateToken();
+
+    return redirect()->route('login');
+})->middleware('auth')->name('logout');
+
+Route::middleware('auth')->group(function () {
+    Route::get('/onboarding', Onboarding::class)->name('workspaces.onboarding');
+    Route::get('/invitations/{token}', AcceptInvitation::class)->name('invitations.accept');
+});
+
+Route::middleware(['auth', 'workspace.active'])->group(function () {
+    Route::get('/dashboard', Dashboard::class)->name('dashboard');
+
+    Route::get('/letters', LettersIndex::class)->name('letters.index');
+    Route::get('/letters/create', LetterComposer::class)->name('letters.create');
+    Route::get('/letters/{letter}/edit', LetterComposer::class)->name('letters.edit');
+    Route::get('/letters/{letter}', LetterShow::class)->name('letters.show');
+    Route::get('/letters/{letter}/download', [LetterDocumentController::class, 'downloadLetter'])->name('letters.download');
+    Route::get('/letters/{letter}/preview.pdf', [LetterDocumentController::class, 'previewPdf'])->name('letters.preview-pdf');
+
+    Route::get('/bulk', BulkGenerator::class)->name('bulk.index');
+    Route::get('/bulk/{bulkJob}/download', [LetterDocumentController::class, 'downloadBulk'])->name('bulk.download');
+
+    Route::get('/templates', TemplatesIndex::class)->name('templates.index');
+    Route::get('/templates/{template}/download', [LetterDocumentController::class, 'downloadTemplate'])->name('templates.download');
+
+    Route::get('/settings/kop', KopBuilder::class)->name('settings.kop');
+    Route::get('/settings/numbering', NumberingSettings::class)->name('settings.numbering');
+    Route::get('/settings/members', MembersIndex::class)->name('settings.members');
+
+    Route::get('/admin/global-templates', GlobalTemplatesIndex::class)->name('admin.global-templates');
+});
+
+/*
+|--------------------------------------------------------------------------
+| JSON API v1 (Session-based auth + CSRF per docs/API.md §1–§3)
+|--------------------------------------------------------------------------
+*/
+Route::prefix('api/v1')
+    ->middleware(['auth'])
+    ->group(function () {
+        Route::middleware('workspace.member')->group(function () {
+            Route::get('/workspaces/{workspace}/letters', [LetterController::class, 'index'])
+                ->name('api.v1.letters.index');
+        });
+
+        Route::middleware('workspace.member:write')->group(function () {
+            Route::post('/workspaces/{workspace}/letters', [LetterController::class, 'store'])
+                ->name('api.v1.letters.store');
+            Route::patch('/workspaces/{workspace}/letters/{letter}/status', [LetterController::class, 'updateStatus'])
+                ->name('api.v1.letters.status');
+            Route::post('/workspaces/{workspace}/letters/{letter}/revise', [LetterController::class, 'revise'])
+                ->name('api.v1.letters.revise');
+            Route::post('/workspaces/{workspace}/letters/bulk', [BulkLetterController::class, 'store'])
+                ->name('api.v1.letters.bulk');
+        });
+
+        Route::get('/jobs/{bulkJob}', [BulkLetterController::class, 'showJob'])
+            ->name('api.v1.jobs.show');
+    });
