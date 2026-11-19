@@ -51,20 +51,33 @@ class GenerateBulkLetterJob implements ShouldQueue
                 $mergedVars = array_replace($shared, is_array($recipientVars) ? $recipientVars : []);
 
                 // Ensure common recipient aliases populate template placeholders smoothly
-                if (isset($mergedVars['nama']) && ! isset($mergedVars['penerima'])) {
-                    $mergedVars['penerima'] = $mergedVars['nama'];
-                }
-                if (isset($mergedVars['alamat']) && ! isset($mergedVars['tempat_tujuan'])) {
-                    $mergedVars['tempat_tujuan'] = $mergedVars['alamat'];
+                $nameVal = $mergedVars['tujuan'] ?? $mergedVars['penerima'] ?? $mergedVars['nama'] ?? null;
+                if ($nameVal !== null) {
+                    $mergedVars['tujuan'] = $mergedVars['tujuan'] ?? $nameVal;
+                    $mergedVars['penerima'] = $mergedVars['penerima'] ?? $nameVal;
+                    $mergedVars['nama'] = $mergedVars['nama'] ?? $nameVal;
                 }
 
-                $letter = DB::transaction(function () use ($workspace, $template, $job, $mergedVars, $allocator) {
+                $instansiVal = $mergedVars['instansi'] ?? $mergedVars['tempat_tujuan'] ?? $mergedVars['alamat'] ?? null;
+                if ($instansiVal !== null) {
+                    $mergedVars['instansi'] = $mergedVars['instansi'] ?? $instansiVal;
+                    $mergedVars['tempat_tujuan'] = $mergedVars['tempat_tujuan'] ?? $instansiVal;
+                    $mergedVars['alamat'] = $mergedVars['alamat'] ?? $instansiVal;
+                }
+
+                $letterPerihal = trim((string) ($mergedVars['perihal'] ?? ''));
+                if ($letterPerihal === '') {
+                    $letterPerihal = (string) $job->perihal;
+                }
+                $mergedVars['perihal'] = $letterPerihal;
+
+                $letter = DB::transaction(function () use ($workspace, $template, $job, $mergedVars, $letterPerihal, $allocator) {
                     $letter = Letter::withoutGlobalScopes()->create([
                         'workspace_id' => $workspace->id,
                         'template_id' => $template->id,
                         'created_by' => $job->created_by,
                         'bulk_job_id' => $job->id,
-                        'perihal' => $job->perihal,
+                        'perihal' => $letterPerihal,
                         'letter_date' => $job->letter_date->toDateString(),
                         'status' => LetterStatus::Draft,
                         'field_values' => $mergedVars,

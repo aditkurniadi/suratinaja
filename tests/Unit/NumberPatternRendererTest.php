@@ -67,4 +67,55 @@ class NumberPatternRendererTest extends TestCase
         $this->expectException(DomainException::class);
         $renderer->validate('{kode}/{bulan_romawi}/{tahun}');
     }
+
+    public function test_it_renders_himatris_activity_format_with_category_parameter_and_activity_code(): void
+    {
+        $renderer = new NumberPatternRenderer;
+        $ws = new Workspace([
+            'name' => 'HIMATRIS',
+            'slug' => 'himatris',
+            'number_pattern' => '{seq}/{kategori}{parameter}/PAN-{kode_kegiatan}/{kode}/{bulan_romawi}/{tahun}',
+            'number_code' => 'HIMATRIS',
+            'seq_padding' => 3,
+        ]);
+
+        $formatted = $renderer->render(
+            '{seq}/{kategori}{parameter}/PAN-{kode_kegiatan}/{kode}/{bulan_romawi}/{tahun}',
+            $ws,
+            1,
+            Carbon::parse('2026-07-15'),
+            [
+                'kategori' => 'SPm',
+                'parameter' => '-i',
+                'kode_kegiatan' => 'JKBFEST',
+            ]
+        );
+
+        $this->assertSame('001/SPm-i/PAN-JKBFEST/HIMATRIS/VII/2026', $formatted);
+    }
+
+    public function test_it_renders_custom_category_and_parameter_flexibly(): void
+    {
+        $renderer = new NumberPatternRenderer;
+        $ws = new Workspace([
+            'name' => 'HIMATRIS',
+            'slug' => 'himatris',
+            'number_pattern' => '{seq}/{kategori}{parameter}/{kode}/{bulan_romawi}/{tahun}',
+            'number_code' => 'HIMATRIS',
+            'seq_padding' => 3,
+        ]);
+
+        $formatted = $renderer->render(
+            '{seq}/{kategori}{parameter}/{kode}/{bulan_romawi}/{tahun}',
+            $ws,
+            1,
+            Carbon::parse('2026-07-15'),
+            [
+                'kategori' => 'MOU',
+                'parameter' => '-e',
+            ]
+        );
+
+        $this->assertSame('001/MOU-e/HIMATRIS/VII/2026', $formatted);
+    }
 }

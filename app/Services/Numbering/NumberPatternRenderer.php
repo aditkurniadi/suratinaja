@@ -10,11 +10,18 @@ class NumberPatternRenderer
 {
     public const ALLOWED_TOKENS = [
         'seq',
+        'nomor', // alias for {seq}
         'nomor_urut', // alias for {seq}
         'kode',
         'bulan',
         'bulan_romawi',
         'tahun',
+        'kategori',
+        'jenis_surat', // alias for {kategori}
+        'parameter',
+        'kode_kegiatan',
+        'panitia',
+        'kepanitiaan', // alias for {panitia}
     ];
 
     private const ROMAN_MONTHS = [
@@ -56,22 +63,26 @@ class NumberPatternRenderer
             $list = implode(', ', array_map(fn ($t) => "{{$t}}", $unknown));
             throw new DomainException(
                 'PATTERN_INVALID',
-                "Token pola penomoran tidak dikenal: {$list}. Token yang didukung: {seq}, {kode}, {bulan}, {bulan_romawi}, {tahun}.",
+                "Token pola penomoran tidak dikenal: {$list}. Token yang didukung: {seq}, {kode}, {kategori}, {parameter}, {kode_kegiatan}, {panitia}, {bulan}, {bulan_romawi}, {tahun}.",
                 422,
                 ['unknown_tokens' => $unknown]
             );
         }
 
-        if (! in_array('seq', $tokens, true) && ! in_array('nomor_urut', $tokens, true)) {
-            throw new DomainException('PATTERN_INVALID', 'Pola nomor wajib menyertakan token {seq} atau {nomor_urut}.', 422);
+        if (! in_array('seq', $tokens, true) && ! in_array('nomor', $tokens, true) && ! in_array('nomor_urut', $tokens, true)) {
+            throw new DomainException('PATTERN_INVALID', 'Pola nomor wajib menyertakan token {seq}, {nomor}, atau {nomor_urut}.', 422);
         }
     }
 
+    /**
+     * @param  array<string, mixed>  $context
+     */
     public function render(
         string $pattern,
         Workspace $workspace,
         int $sequence,
         CarbonInterface $date,
+        array $context = [],
     ): string {
         $this->validate($pattern);
 
@@ -79,13 +90,25 @@ class NumberPatternRenderer
         $seqFormatted = str_pad((string) $sequence, $padding, '0', STR_PAD_LEFT);
         $month = (int) $date->format('n');
 
+        $kategori = (string) ($context['kategori'] ?? $context['jenis_surat'] ?? 'SU');
+        $parameter = (string) ($context['parameter'] ?? '-i');
+        $kodeKegiatan = (string) ($context['kode_kegiatan'] ?? 'JKBFEST');
+        $panitia = trim($kodeKegiatan) !== '' ? 'PAN-'.strtoupper($kodeKegiatan) : (string) ($workspace->number_code ?: 'HIMATRIS');
+
         $replacements = [
             '{seq}' => $seqFormatted,
+            '{nomor}' => $seqFormatted,
             '{nomor_urut}' => $seqFormatted,
             '{kode}' => (string) ($workspace->number_code ?: strtoupper($workspace->slug)),
             '{bulan}' => $date->format('m'),
             '{bulan_romawi}' => self::ROMAN_MONTHS[$month] ?? 'I',
             '{tahun}' => $date->format('Y'),
+            '{kategori}' => $kategori,
+            '{jenis_surat}' => $kategori,
+            '{parameter}' => $parameter,
+            '{kode_kegiatan}' => $kodeKegiatan,
+            '{panitia}' => $panitia,
+            '{kepanitiaan}' => $panitia,
         ];
 
         return strtr($pattern, $replacements);

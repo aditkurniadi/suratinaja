@@ -71,11 +71,24 @@ class NumberAllocator
                             'updated_at' => now(),
                         ]);
 
+                    $fieldValues = $letter->field_values ?? [];
+                    $kodeKegiatan = (string) ($fieldValues['_kode_kegiatan'] ?? '');
+                    if ($kodeKegiatan === '' && $workspace->is_activity && ! empty($workspace->activity_code)) {
+                        $kodeKegiatan = (string) $workspace->activity_code;
+                    }
+
+                    $context = [
+                        'kategori' => $fieldValues['_kategori'] ?? 'SU',
+                        'parameter' => $fieldValues['_parameter'] ?? '-i',
+                        'kode_kegiatan' => $kodeKegiatan ?: 'KEGIATAN',
+                    ];
+
                     $formatted = $this->renderer->render(
                         $workspace->number_pattern,
                         $workspace,
                         $nextSeq,
                         $date,
+                        $context,
                     );
 
                     return LetterNumber::withoutGlobalScopes()->create([

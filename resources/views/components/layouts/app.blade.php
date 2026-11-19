@@ -33,6 +33,7 @@
             'items' => array_values(array_filter([
                 ['label' => 'Builder Kop Surat', 'route' => 'settings.kop', 'icon' => 'stamp', 'show' => $isAdmin],
                 ['label' => 'Pola Penomoran', 'route' => 'settings.numbering', 'icon' => 'hash', 'show' => $isAdmin],
+                ['label' => 'Jenis Surat', 'route' => 'settings.letter-types', 'icon' => 'tag', 'show' => $isAdmin],
                 ['label' => 'Anggota & Akses', 'route' => 'settings.members', 'icon' => 'users', 'show' => $isAdmin],
             ], fn ($i) => $i['show'])),
         ],
@@ -245,7 +246,7 @@
                 </div>
             </header>
 
-            <main class="t-page-enter mx-auto w-full max-w-[87.5rem] flex-1 px-4 md:px-8 py-6">
+            <main class="mx-auto w-full max-w-[87.5rem] flex-1 px-4 md:px-8 py-6">
                 @if (session('status'))
                     <x-ui.alert class="mb-4">
                         {{ session('status') }}

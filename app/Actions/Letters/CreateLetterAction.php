@@ -34,11 +34,16 @@ class CreateLetterAction
             throw DomainException::workspaceForbidden('Peran Ketua tidak diizinkan membuat surat.');
         }
 
-        $templateId = (int) ($payload['template_id'] ?? 0);
-        /** @var LetterTemplate|null $template */
-        $template = LetterTemplate::withoutGlobalScopes()->find($templateId);
-        if (! $template || ! $template->isAccessibleBy($workspace)) {
-            throw DomainException::templateInvalid('Template surat tidak ditemukan atau tidak tersedia untuk workspace ini.');
+        $isManual = (bool) ($payload['is_manual_number'] ?? false) || empty($payload['template_id']);
+        $template = null;
+
+        if (! $isManual) {
+            $templateId = (int) ($payload['template_id'] ?? 0);
+            /** @var LetterTemplate|null $template */
+            $template = LetterTemplate::withoutGlobalScopes()->find($templateId);
+            if (! $template || ! $template->isAccessibleBy($workspace)) {
+                throw DomainException::templateInvalid('Template surat tidak ditemukan atau tidak tersedia untuk workspace ini.');
+            }
         }
 
         $perihal = trim((string) ($payload['perihal'] ?? ''));
@@ -49,18 +54,24 @@ class CreateLetterAction
         $letterDate = Carbon::parse($payload['letter_date'] ?? now());
         $variables = is_array($payload['variables'] ?? null) ? $payload['variables'] : [];
 
-        $this->validateRequiredVariables($template->variables_schema ?? [], $variables);
+        if ($template) {
+            $this->validateRequiredVariables($template->variables_schema ?? [], $variables);
+        }
 
-        $letter = DB::transaction(function () use ($workspace, $actor, $template, $perihal, $letterDate, $variables, $payload) {
+        $linkDrive = trim((string) ($payload['link_drive'] ?? ''));
+
+        $letter = DB::transaction(function () use ($workspace, $actor, $template, $perihal, $letterDate, $variables, $linkDrive, $isManual, $payload) {
             $letter = Letter::withoutGlobalScopes()->create([
                 'workspace_id' => $workspace->id,
-                'template_id' => $template->id,
+                'template_id' => $template?->id,
                 'created_by' => $actor->id,
                 'duplicated_from_id' => $payload['duplicated_from_id'] ?? null,
                 'perihal' => $perihal,
                 'letter_date' => $letterDate->toDateString(),
                 'status' => LetterStatus::Draft,
                 'field_values' => $variables,
+                'link_drive' => $linkDrive ?: null,
+                'is_manual_number' => $isManual,
                 'version' => 1,
             ]);
 
@@ -70,9 +81,10 @@ class CreateLetterAction
                 'letter_id' => $letter->id,
                 'workspace_id' => $workspace->id,
                 'actor_id' => $actor->id,
-                'action' => isset($payload['duplicated_from_id']) ? 'duplicated' : 'created',
+                'action' => isset($payload['duplicated_from_id']) ? 'duplicated' : ($isManual ? 'number_allocated' : 'created'),
                 'payload' => [
                     'number' => $number->formatted_number,
+                    'is_manual_number' => $isManual,
                     'duplicated_from_id' => $payload['duplicated_from_id'] ?? null,
                 ],
                 'created_at' => now(),
@@ -81,8 +93,10 @@ class CreateLetterAction
             return $letter->fresh(['activeNumber', 'template', 'workspace']);
         });
 
-        $docxPath = $this->renderer->renderSingle($letter);
-        $letter->forceFill(['generated_file_path' => $docxPath])->saveQuietly();
+        if ($template) {
+            $docxPath = $this->renderer->renderSingle($letter);
+            $letter->forceFill(['generated_file_path' => $docxPath])->saveQuietly();
+        }
 
         return $letter;
     }

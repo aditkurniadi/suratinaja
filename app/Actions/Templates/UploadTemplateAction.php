@@ -30,6 +30,7 @@ class UploadTemplateAction
         ?Workspace $workspace = null,
         TemplateScope $scope = TemplateScope::Workspace,
         ?string $description = null,
+        bool $hasEmbeddedKop = false,
     ): LetterTemplate {
         if ($scope === TemplateScope::Global) {
             if (! $actor->is_super_admin) {
@@ -67,6 +68,7 @@ class UploadTemplateAction
             'description' => $description,
             'file_path' => $storedPath,
             'variables_schema' => $schema,
+            'has_embedded_kop' => $hasEmbeddedKop,
             'version' => 1,
             'is_deprecated' => false,
             'created_by' => $actor->id,
@@ -108,6 +110,7 @@ class UploadTemplateAction
             'description' => $existing->description,
             'file_path' => $storedPath,
             'variables_schema' => $schema,
+            'has_embedded_kop' => (bool) $existing->has_embedded_kop,
             'version' => $nextVersion,
             'source_template_id' => $existing->id,
             'is_deprecated' => false,

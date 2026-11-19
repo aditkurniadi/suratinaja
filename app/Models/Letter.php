@@ -27,6 +27,8 @@ class Letter extends Model
         'field_values',
         'generated_file_path',
         'preview_pdf_path',
+        'link_drive',
+        'is_manual_number',
         'version',
         'cancel_reason',
         'signed_at',
@@ -40,6 +42,7 @@ class Letter extends Model
             'letter_date' => 'date',
             'field_values' => 'array',
             'version' => 'integer',
+            'is_manual_number' => 'boolean',
             'signed_at' => 'datetime',
             'cancelled_at' => 'datetime',
         ];

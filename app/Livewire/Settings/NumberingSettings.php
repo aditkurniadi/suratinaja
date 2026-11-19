@@ -15,6 +15,10 @@ class NumberingSettings extends Component
 
     public string $numberCode = '';
 
+    public string $activityCode = 'JKBFEST';
+
+    public bool $isActivity = true;
+
     public int $seqPadding = 3;
 
     public function mount(): void
@@ -26,7 +30,22 @@ class NumberingSettings extends Component
 
         $this->numberPattern = $ws->number_pattern;
         $this->numberCode = (string) ($ws->number_code ?? '');
+        $this->activityCode = (string) ($ws->activity_code ?: 'JKBFEST');
+        $this->isActivity = (bool) ($ws->is_activity ?? true);
         $this->seqPadding = (int) ($ws->seq_padding ?? 3);
+    }
+
+    public function applyPreset(string $presetKey): void
+    {
+        $preset = config("suratinaja.numbering.presets.{$presetKey}");
+        if ($preset && isset($preset['pattern'])) {
+            $this->numberPattern = $preset['pattern'];
+            $this->dispatch('toast', [
+                'type' => 'info',
+                'title' => 'Preset Diterapkan',
+                'description' => "Pola diatur ke: {$preset['name']}",
+            ]);
+        }
     }
 
     public function save(NumberPatternRenderer $renderer): void
@@ -39,6 +58,8 @@ class NumberingSettings extends Component
         $this->validate([
             'numberPattern' => ['required', 'string', 'max:255'],
             'numberCode' => ['required', 'string', 'max:40'],
+            'activityCode' => ['nullable', 'string', 'max:50'],
+            'isActivity' => ['boolean'],
             'seqPadding' => ['required', 'integer', 'min:1', 'max:6'],
         ]);
 
@@ -53,6 +74,8 @@ class NumberingSettings extends Component
         $ws->fill([
             'number_pattern' => trim($this->numberPattern),
             'number_code' => trim($this->numberCode),
+            'activity_code' => $this->isActivity ? strtoupper(trim($this->activityCode)) : null,
+            'is_activity' => $this->isActivity,
             'seq_padding' => $this->seqPadding,
         ])->save();
 
@@ -72,16 +95,30 @@ class NumberingSettings extends Component
             $tempWs = clone $ws;
             $tempWs->number_pattern = $this->numberPattern;
             $tempWs->number_code = $this->numberCode;
+            $tempWs->activity_code = $this->activityCode;
+            $tempWs->is_activity = $this->isActivity;
             $tempWs->seq_padding = $this->seqPadding;
-            $preview = $renderer->render($this->numberPattern, $tempWs, 12, now());
+            $sampleDate = \Carbon\Carbon::create(2026, 7, 15);
+            $preview = $renderer->render($this->numberPattern, $tempWs, 1, $sampleDate, [
+                'kategori' => 'SPm',
+                'parameter' => '-i',
+                'kode_kegiatan' => $this->isActivity ? strtoupper(trim($this->activityCode)) : '',
+            ]);
         } catch (DomainException $e) {
             $previewError = $e->getMessage();
         }
+
+        $presets = config('suratinaja.numbering.presets', []);
+        $letterTypes = config('suratinaja.letter_types', []);
+        $letterParameters = config('suratinaja.letter_parameters', []);
 
         return view('livewire.settings.numbering-settings', [
             'workspace' => $ws,
             'preview' => $preview,
             'previewError' => $previewError,
+            'presets' => $presets,
+            'letterTypes' => $letterTypes,
+            'letterParameters' => $letterParameters,
         ]);
     }
 }

@@ -13,6 +13,7 @@ use Carbon\Carbon;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
+use PhpOffice\PhpWord\Settings as PhpWordSettings;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -28,6 +29,7 @@ class AppServiceProvider extends ServiceProvider
         }
 
         Carbon::setLocale(config('app.locale', 'id'));
+        PhpWordSettings::setOutputEscapingEnabled(true);
 
         Gate::policy(Workspace::class, WorkspacePolicy::class);
         Gate::policy(Letter::class, LetterPolicy::class);

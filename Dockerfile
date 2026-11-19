@@ -21,6 +21,7 @@ RUN composer install \
     --no-progress \
     --no-scripts \
     --prefer-dist \
+    --ignore-platform-reqs \
     --optimize-autoloader
 
 # ==============================================================================
@@ -42,7 +43,11 @@ ENV PHP_OPCACHE_ENABLE=1 \
     SSL_MODE=off \
     AUTORUN_ENABLED=true \
     AUTORUN_LARAVEL_MIGRATION=true \
-    AUTORUN_LARAVEL_STORAGE_LINK=true
+    AUTORUN_LARAVEL_STORAGE_LINK=true \
+    PHP_UPLOAD_MAX_FILE_SIZE=64M \
+    PHP_POST_MAX_SIZE=64M \
+    NGINX_MAX_BODY_SIZE=64M \
+    PHP_MEMORY_LIMIT=512M
 
 USER www-data
 

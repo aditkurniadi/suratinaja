@@ -161,19 +161,17 @@
 
 @layer components {
     .t-page-enter {
-        animation: t-page-enter var(--duration-fast) var(--ease-smooth-out) both;
+        animation: t-page-enter var(--duration-fast) var(--ease-smooth-out);
     }
 
     @keyframes t-page-enter {
         from {
             opacity: 0;
             transform: translateX(var(--distance-base));
-            filter: blur(var(--blur-medium));
         }
         to {
             opacity: 1;
-            transform: translateX(0);
-            filter: blur(0);
+            transform: none;
         }
     }
 
