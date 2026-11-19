@@ -37,14 +37,31 @@ class KopInjector
             throw DomainException::templateInvalid('Struktur word/document.xml tidak ditemukan.');
         }
 
+        // Clean up any standalone empty paragraphs or manual page breaks right before Lampiran I or __lampiran_section_start
+        $cleanPattern = '/(?:<w:p\b[^>]*>(?:(?!<\/w:p>).)*<w:br\b[^>]*w:type="page"[^>]*>.*?<\/w:p>\s*|<w:p\b[^>]*>(?:<w:pPr>.*?<\/w:pPr>)?\s*<\/w:p>\s*)+(?=<w:p\b[^>]*>(?:(?!<\/w:p>).)*(?:\$\{__lampiran_section_start\}|Lampiran\s+[IVX]+(?!\s*:)))/is';
+        $xml = preg_replace($cleanPattern, '', $xml) ?? $xml;
+
+        // Also clean up any inline <w:br w:type="page"/> inside the paragraph right before Lampiran (e.g. inside signature_block paragraph)
+        $xml = preg_replace('/(<w:br\b[^>]*w:type="page"[^>]*>)(?=\s*<\/w:r>.*?<\/w:p>\s*<w:p\b[^>]*>(?:(?!<\/w:p>).)*(?:\$\{__lampiran_section_start\}|Lampiran\s+[IVX]+(?!\s*:)))/is', '', $xml) ?? $xml;
+
         $kopXml = $this->buildKopTableXml($workspace, '__kop');
         $updated = preg_replace('/(<w:body[^>]*>)/', '$1'.$kopXml, $xml, 1);
+
+        $pageBreakBeforeXml = '<w:p><w:pPr><w:pageBreakBefore/><w:spacing w:before="0" w:after="0" w:line="0" w:lineRule="exact"/></w:pPr></w:p>';
 
         if ($updated !== null && str_contains($updated, '${__lampiran_section_start}')) {
             $kopPage2Xml = $this->buildKopTableXml($workspace, '__kop_p2');
             $updated = preg_replace(
                 '/(<w:p\b[^>]*>(?:(?!<\/w:p>).)*\$\{__lampiran_section_start\}.*?<\/w:p>)/s',
-                '$1'.$kopPage2Xml,
+                $pageBreakBeforeXml.'$1'.$kopPage2Xml,
+                $updated,
+                1
+            ) ?? $updated;
+        } elseif ($updated !== null && preg_match('/<w:p\b[^>]*>(?:(?!<\/w:p>).)*Lampiran\s+[IVX]+(?!\s*:).*?<\/w:p>/is', $updated)) {
+            $kopPage2Xml = $this->buildKopTableXml($workspace, '__kop_p2');
+            $updated = preg_replace(
+                '/(<w:p\b[^>]*>(?:(?!<\/w:p>).)*Lampiran\s+[IVX]+(?!\s*:).*?<\/w:p>)/is',
+                $pageBreakBeforeXml.$kopPage2Xml.'$1',
                 $updated,
                 1
             ) ?? $updated;
@@ -235,6 +252,6 @@ class KopInjector
             .'</w:tc>'
             .'</w:tr>'
             .'</w:tbl>'
-            .'<w:p><w:pPr><w:spacing w:before="40" w:after="40"/></w:pPr></w:p>';
+            .'<w:p><w:pPr><w:spacing w:before="120" w:after="160"/></w:pPr></w:p>';
     }
 }

@@ -83,16 +83,29 @@ class PdfPreviewService
         $hasKop = false;
         $runningHeaderHtml = '';
         $marginTop = '2.54cm';
+        $headerTop = '-2.0cm';
 
         if ($embeddedKopHtml !== null && trim($embeddedKopHtml) !== '') {
             $hasKop = true;
             $runningHeaderHtml = '<div class="header-kop">'.$embeddedKopHtml.'</div>';
-            $marginTop = '4.8cm';
+            $lineCount = max(4, substr_count($embeddedKopHtml, '<p') + substr_count($embeddedKopHtml, '<tr'));
+            $kopContentHeightCm = max(3.2, ($lineCount * 0.48) + 0.8);
+            $marginTopCm = round($kopContentHeightCm + 1.45, 2);
+            $marginTop = "{$marginTopCm}cm";
+            $headerTop = '-'.round($marginTopCm - 0.7, 2).'cm';
         } elseif ($workspace->hasKop() && ! $hasEmbeddedKop) {
             $hasKop = true;
+            $lines = $this->kopInjector->headerLines($workspace);
+            $addrLines = $this->kopInjector->addressLines($workspace);
+            $nHeader = count($lines);
+            $nAddr = count($addrLines);
+            $kopContentHeightCm = max(3.2, ($nHeader * 0.55) + ($nAddr * 0.45) + 0.8);
+            $marginTopCm = round($kopContentHeightCm + 1.45, 2);
+            $marginTop = "{$marginTopCm}cm";
+            $headerTop = '-'.round($marginTopCm - 0.7, 2).'cm';
+
             $kopHtml = $this->buildKopHtml($workspace);
             $runningHeaderHtml = '<div class="header-kop">'.$kopHtml.'</div>';
-            $marginTop = '4.8cm';
         }
 
         $city = e((string) ($values['_city'] ?? $workspace->default_city ?: 'Cilacap'));
@@ -130,7 +143,7 @@ class PdfPreviewService
             $contentHtml = $this->renderCustomDocxBodyHtml($letter, $hasKop, $signatureHtml, $page2Html, $hasEmbeddedKop);
         } else {
             $contentHtml = <<<HTML
-            <p style="text-align: right; margin-bottom: 4pt;">{$city}, {$letterDateFormatted}</p>
+            <p style="text-align: right; margin-top: 0; margin-bottom: 6pt; font-size: 12pt;">{$city}, {$letterDateFormatted}</p>
 
             <table class="meta-table">
                 <tr>
@@ -215,10 +228,9 @@ HTML;
                 }
                 div.header-kop {
                     position: fixed;
-                    top: -4.3cm;
+                    top: {$headerTop};
                     left: 0;
                     right: 0;
-                    height: 3.8cm;
                 }
                 p {
                     margin: 0 0 3pt 0;
@@ -321,7 +333,7 @@ HTML;
                     margin: 0;
                 }
                 .sig-space {
-                    height: 54pt;
+                    height: 42pt;
                 }
                 .sig-name {
                     text-decoration: underline;
@@ -332,7 +344,18 @@ HTML;
                     font-size: 11pt;
                 }
                 .page-break {
-                    page-break-before: always;
+                    page-break-before: always !important;
+                    break-before: page !important;
+                    clear: both;
+                    display: block;
+                    height: 0;
+                    margin: 0;
+                    padding: 0;
+                }
+                .lampiran-section {
+                    page-break-before: always !important;
+                    break-before: page !important;
+                    clear: both;
                 }
                 table.lampiran-table {
                     width: 100%;
@@ -795,10 +818,6 @@ HTML;
             } else {
                 $hasPageBreak = (bool) preg_match('/<w:br\b[^>]*w:type="page"/i', $elem)
                     || str_contains($elem, '<w:pageBreakBefore');
-                if ($hasPageBreak) {
-                    $bodyHtml .= '<div class="page-break"></div>';
-                    $justEmittedPageBreak = true;
-                }
 
                 $align = 'left';
                 if (preg_match('/<w:jc\s+w:val="([^"]+)"/', $elem, $m)) {
@@ -852,7 +871,14 @@ HTML;
                 }
 
                 if ($plainCheck === '' && ! str_contains($pContent, '<img')) {
-                    if ($hasPageBreak || $justEmittedPageBreak) {
+                    if ($hasPageBreak) {
+                        if (! $justEmittedPageBreak) {
+                            $bodyHtml .= '<div class="page-break"></div>';
+                            $justEmittedPageBreak = true;
+                        }
+                        continue;
+                    }
+                    if ($justEmittedPageBreak) {
                         continue;
                     }
                     // Skip artificial empty paragraph #0 injected right after KopInjector table
@@ -864,8 +890,6 @@ HTML;
 
                     continue;
                 }
-
-                $justEmittedPageBreak = false;
 
                 // Case A: Indented tab-aligned row (e.g. "\tHari, Tanggal\t: 18 November 2026")
                 if (preg_match('/^\t+([^\t:]+)\t*:\s*(.*)$/s', $pContent, $tabMatch)) {
@@ -881,6 +905,7 @@ HTML;
                         </tr>
                     </table>
                     HTML;
+                    $justEmittedPageBreak = false;
 
                     continue;
                 }
@@ -902,17 +927,32 @@ HTML;
                         </tr>
                     </table>
                     HTML;
+                    $justEmittedPageBreak = false;
 
                     continue;
                 }
 
                 // Case C: Normal paragraph (replace any remaining \t with 36pt tab span)
+                $isLampiranHeading = (bool) preg_match('/^Lampiran\s+[IVX]+(?!\s*:)/i', $plainCheck)
+                    || str_contains($pContent, '__lampiran_section_start');
+                if ($isLampiranHeading) {
+                    // Remove trailing empty paragraphs right before lampiran to avoid pushing an empty line
+                    $bodyHtml = preg_replace('/(?:<p style="margin: 0; line-height: 1.35; font-size: 12pt;">&nbsp;<\/p>\s*)+$/', '', $bodyHtml) ?? $bodyHtml;
+                }
+
+                $shouldBreak = ($hasPageBreak || $isLampiranHeading) && ! $justEmittedPageBreak;
+                $pBreakStyle = $shouldBreak ? 'page-break-before: always !important; break-before: page !important; ' : '';
                 $pContent = str_replace("\t", '<span style="display:inline-block; width: 36pt;"></span>', $pContent);
-                $bodyHtml .= '<p style="text-align:'.$align.'; margin: 0 0 2pt 0; line-height: 1.38;">'.$pContent.'</p>';
+                $bodyHtml .= '<p style="'.$pBreakStyle.'text-align:'.$align.'; margin: 0 0 2pt 0; line-height: 1.38;">'.$pContent.'</p>';
+                $justEmittedPageBreak = $shouldBreak;
             }
         }
 
-        return $bodyHtml.($signatureReplaced ? '' : $signatureHtml).$page2Html;
+        $hasLampiranInBody = str_contains($bodyHtml, 'Lampiran I')
+            || str_contains($bodyHtml, 'Daftar Perlengkapan')
+            || str_contains($bodyHtml, 'lampiran-table');
+
+        return $bodyHtml.($signatureReplaced ? '' : $signatureHtml).($hasLampiranInBody ? '' : $page2Html);
     }
 
     /**
@@ -1061,20 +1101,21 @@ HTML;
             $tableTitle = e($table['label']);
 
             $allHtml .= <<<HTML
-            <div class="page-break"></div>
-            <p style="font-weight: bold; font-style: italic; margin-bottom: 6pt;">Lampiran {$lampiranRoman}</p>
-            <p style="margin-bottom: 14pt;">Nomor: {$nomorSurat}</p>
-            <p style="text-align: center; font-weight: bold; margin-bottom: 8pt;">{$tableTitle}</p>
-            <table class="lampiran-table">
-                <thead>
-                    <tr>
-                        {$headersHtml}
-                    </tr>
-                </thead>
-                <tbody>
-                    {$rowsHtml}
-                </tbody>
-            </table>
+            <div class="lampiran-section" style="page-break-before: always !important; break-before: page !important; clear: both;">
+                <p style="font-weight: bold; font-style: italic; margin-top: 0; margin-bottom: 6pt;">Lampiran {$lampiranRoman}</p>
+                <p style="margin-top: 0; margin-bottom: 14pt;">Nomor: {$nomorSurat}</p>
+                <p style="text-align: center; font-weight: bold; margin-top: 0; margin-bottom: 8pt;">{$tableTitle}</p>
+                <table class="lampiran-table">
+                    <thead>
+                        <tr>
+                            {$headersHtml}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {$rowsHtml}
+                    </tbody>
+                </table>
+            </div>
             HTML;
         }
 

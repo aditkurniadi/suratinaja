@@ -24,6 +24,7 @@ services:
       GOTENBERG_URL: "http://gotenberg:3000"
       SUPERADMIN_EMAIL: "${SUPERADMIN_EMAIL:-admin@organisasi.id}"
       SUPERADMIN_PASSWORD: "${SUPERADMIN_PASSWORD:-PasswordKuat123!}"
+      AUTORUN_LARAVEL_MIGRATION: "false"
     volumes:
       - suratinaja-storage:/var/www/html/storage
     networks:

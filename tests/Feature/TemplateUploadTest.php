@@ -476,7 +476,7 @@ class TemplateUploadTest extends TestCase
         $method = $reflector->getMethod('renderCustomDocxBodyHtml');
         $html = $method->invoke($previewService, $letter, false, '<div class="sig">TTD</div>', '', false);
 
-        $this->assertStringContainsString('<div class="page-break"></div>', $html);
+        $this->assertStringContainsString('page-break-before: always', $html);
         $this->assertStringContainsString('<table class="lampiran-table"', $html);
         $this->assertStringContainsString('<th style="', $html);
         $this->assertStringContainsString('border: 0.75pt solid #000000;', $html);

@@ -42,7 +42,7 @@ COPY --from=assets --chown=www-data:www-data /app/public/build /var/www/html/pub
 ENV PHP_OPCACHE_ENABLE=1 \
     SSL_MODE=off \
     AUTORUN_ENABLED=true \
-    AUTORUN_LARAVEL_MIGRATION=true \
+    AUTORUN_LARAVEL_MIGRATION=false \
     AUTORUN_LARAVEL_STORAGE_LINK=true \
     PHP_UPLOAD_MAX_FILE_SIZE=64M \
     PHP_POST_MAX_SIZE=64M \

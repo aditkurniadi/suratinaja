@@ -26,11 +26,15 @@ services:
       QUEUE_CONNECTION: database
       SESSION_DRIVER: database
       CACHE_STORE: database
-      GOTENBERG_URL: "${GOTENBERG_URL:-http://gotenberg:3000}"
+      GOTENBERG_URL: "http://gotenberg:3000"
       SUPERADMIN_EMAIL: "${SUPERADMIN_EMAIL:-admin@organisasi.id}"
       SUPERADMIN_PASSWORD: "${SUPERADMIN_PASSWORD:-PasswordKuat123!}"
+      AUTORUN_LARAVEL_MIGRATION: "false"
     volumes:
       - suratinaja-storage:/var/www/html/storage
+    networks:
+      - dokploy-network
+      - default
     depends_on:
       gotenberg:
         condition: service_started
@@ -55,9 +59,11 @@ services:
       DB_USERNAME: "${DB_USERNAME:-root}"
       DB_PASSWORD: "${DB_PASSWORD:-}"
       QUEUE_CONNECTION: database
-      GOTENBERG_URL: "${GOTENBERG_URL:-http://gotenberg:3000}"
+      GOTENBERG_URL: "http://gotenberg:3000"
     volumes:
       - suratinaja-storage:/var/www/html/storage
+    networks:
+      - default
     depends_on:
       gotenberg:
         condition: service_started
@@ -83,12 +89,20 @@ services:
       DB_PASSWORD: "${DB_PASSWORD:-}"
     volumes:
       - suratinaja-storage:/var/www/html/storage
+    networks:
+      - default
 
   gotenberg:
     image: gotenberg/gotenberg:8
     restart: unless-stopped
     expose:
       - "3000"
+    networks:
+      - default
 
 volumes:
   suratinaja-storage:
+
+networks:
+  dokploy-network:
+    external: true

@@ -67,6 +67,7 @@ class DocxRenderer
 
             $processor->saveAs($targetAbs);
             $this->stripResidualPlaceholders($targetAbs, $hasRepeaterRows);
+            $this->ensureLampiranPageBreakInXml($targetAbs);
         } finally {
             @unlink($workingCopy);
         }
@@ -128,6 +129,7 @@ class DocxRenderer
 
             $processor->saveAs($targetAbs);
             $this->stripResidualPlaceholders($targetAbs, true);
+            $this->ensureLampiranPageBreakInXml($targetAbs);
         } finally {
             @unlink($workingCopy);
         }
@@ -650,5 +652,57 @@ class DocxRenderer
         if (! is_dir($dir)) {
             mkdir($dir, 0775, true);
         }
+    }
+
+    /**
+     * Ensures clean page break before the Lampiran section in DOCX XML:
+     * 1. Strips any trailing empty paragraphs and standalone <w:br w:type="page"/> between the signature table and Lampiran.
+     * 2. Injects <w:pageBreakBefore/> on the Lampiran paragraph or ensures Page 2 Kop starts with <w:pageBreakBefore/>.
+     */
+    private function ensureLampiranPageBreakInXml(string $docxPath): void
+    {
+        $zip = new ZipArchive;
+        if ($zip->open($docxPath) !== true) {
+            return;
+        }
+
+        $xml = $zip->getFromName('word/document.xml');
+        if ($xml === false) {
+            $zip->close();
+
+            return;
+        }
+
+        if (! preg_match('/(?:Lampiran\s+[IVX]+|\$\{__lampiran_section_start\})/i', $xml)) {
+            $zip->close();
+
+            return;
+        }
+
+        // Clean up any standalone empty paragraphs or manual page breaks right before Lampiran I or __lampiran_section_start
+        $cleanPattern = '/(?:<w:p\b[^>]*>(?:(?!<\/w:p>).)*<w:br\b[^>]*w:type="page"[^>]*>.*?<\/w:p>\s*|<w:p\b[^>]*>(?:<w:pPr>.*?<\/w:pPr>)?\s*<\/w:p>\s*)+(?=<w:p\b[^>]*>(?:(?!<\/w:p>).)*(?:\$\{__lampiran_section_start\}|Lampiran\s+[IVX]+(?!\s*:)))/is';
+        $xml = preg_replace($cleanPattern, '', $xml) ?? $xml;
+
+        // Ensure paragraph containing Lampiran [Roman] has <w:pageBreakBefore/> if not already preceded by Page 2 Kop
+        if (! str_contains($xml, '__kop_p2')) {
+            $xml = preg_replace_callback(
+                '/<w:p\b([^>]*)>((?:(?!<\/w:p>).)*?\bLampiran\s+[IVX]+(?!\s*:).*?<\/w:p>)/is',
+                function (array $m): string {
+                    $full = $m[0];
+                    if (str_contains($full, '<w:pageBreakBefore')) {
+                        return $full;
+                    }
+                    if (preg_match('/<w:pPr\b[^>]*>/', $full)) {
+                        return preg_replace('/(<w:pPr\b[^>]*>)/', '$1<w:pageBreakBefore/>', $full, 1) ?? $full;
+                    }
+
+                    return preg_replace('/<w:p\b([^>]*)>/', '<w:p$1><w:pPr><w:pageBreakBefore/></w:pPr>', $full, 1) ?? $full;
+                },
+                $xml
+            ) ?? $xml;
+        }
+
+        $zip->addFromString('word/document.xml', $xml);
+        $zip->close();
     }
 }
