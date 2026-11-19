@@ -35,7 +35,8 @@ class PdfPreviewService
         $timeout = (int) config('suratinaja.preview.timeout', 60);
 
         try {
-            $response = Http::timeout($timeout)
+            $response = Http::connectTimeout(2)
+                ->timeout($timeout)
                 ->attach('files', fopen($docxAbs, 'r'), "letter-{$letter->id}.docx")
                 ->post("{$baseUrl}/forms/libreoffice/convert");
 

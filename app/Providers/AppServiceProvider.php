@@ -11,6 +11,7 @@ use App\Policies\WorkspacePolicy;
 use App\Support\CurrentWorkspace;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -22,6 +23,10 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        if (config('app.env') === 'production' || str_starts_with(config('app.url', ''), 'https://')) {
+            URL::forceScheme('https');
+        }
+
         Carbon::setLocale(config('app.locale', 'id'));
 
         Gate::policy(Workspace::class, WorkspacePolicy::class);

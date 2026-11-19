@@ -190,8 +190,14 @@
         </x-ui.card>
     </div>
 
-    {{-- Bulk Job Queue History with Live Polling --}}
-    <x-ui.card wire:poll.3s>
+    {{-- Bulk Job Queue History (polls only when there is an active queued/processing job) --}}
+    @php
+        $hasActiveJobs = $jobs->contains(fn ($j) => ! $j->status->isFinished());
+    @endphp
+    <x-ui.card>
+        @if ($hasActiveJobs)
+            <div wire:poll.3s class="hidden"></div>
+        @endif
         <x-ui.card-header class="border-b border-border pb-4">
             <x-ui.card-title>Riwayat &amp; Status Job Bulk Generation</x-ui.card-title>
             <x-ui.card-description>

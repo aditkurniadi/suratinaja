@@ -1,0 +1,3 @@
+@echo off
+echo Menjalankan SuratinAja di http://127.0.0.1:8000 (Fast Mode: OPcache CLI + Realpath Cache)...
+php -d zend_extension=opcache -d opcache.enable=1 -d opcache.enable_cli=1 -d opcache.memory_consumption=256 -d opcache.max_accelerated_files=20000 -d realpath_cache_size=4096K -d realpath_cache_ttl=600 -S 127.0.0.1:8000 -t public server.php
