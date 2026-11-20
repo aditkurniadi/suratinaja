@@ -124,6 +124,8 @@ return [
         'generated_days' => env('SURATINAJA_RETENTION_DAYS'),
     ],
 
+    'qpdf_binary' => env('QPDF_BINARY'),
+
     'preview' => [
         'gotenberg_url' => env('GOTENBERG_URL', 'http://localhost:3000'),
         'timeout' => (int) env('GOTENBERG_TIMEOUT', 60),
@@ -131,8 +133,9 @@ return [
 
     'onlyoffice' => [
         'url' => env('ONLYOFFICE_URL', 'http://127.0.0.1:8082'),
-        'internal_url' => env('ONLYOFFICE_INTERNAL_URL', 'http://onlyoffice:80'),
+        'internal_url' => env('ONLYOFFICE_INTERNAL_URL'),
         'jwt_secret' => env('ONLYOFFICE_JWT_SECRET', 'suratinaja-onlyoffice-secret-key-12345'),
+        'app_service_url' => env('ONLYOFFICE_APP_SERVICE_URL'),
     ],
 
     'super_admin' => [

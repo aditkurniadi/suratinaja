@@ -27,8 +27,12 @@ class LetterDocumentController extends Controller
         PdfPreviewService $pdfService
     ): Response {
         $letter = Letter::withoutGlobalScopes()->with('workspace')->findOrFail($letterId);
-        if (! $letter->workspace || ! $letter->workspace->hasMember($request->user())) {
+        $user = $request->user();
+        if (! $letter->workspace || ! $letter->workspace->hasMember($user)) {
             abort(403);
+        }
+        if (! $user->can('surat_keluar.view') && ! $user->can('surat_keluar.preview_download')) {
+            abort(403, 'Anda tidak memiliki hak akses mengunduh surat ini.');
         }
 
         // If letter is currently in an editable status and OnlyOffice is configured, forcesave & sync first
@@ -103,8 +107,12 @@ class LetterDocumentController extends Controller
         OnlyOfficeService $onlyOfficeService
     ): Response {
         $letter = Letter::withoutGlobalScopes()->with('workspace')->findOrFail($letterId);
-        if (! $letter->workspace || ! $letter->workspace->hasMember($request->user())) {
+        $user = $request->user();
+        if (! $letter->workspace || ! $letter->workspace->hasMember($user)) {
             abort(403);
+        }
+        if (! $user->can('surat_keluar.view') && ! $user->can('surat_keluar.preview_download')) {
+            abort(403, 'Anda tidak memiliki hak akses mengunduh surat ini.');
         }
 
         // If sync is requested or letter is currently in an editable status and OnlyOffice is configured

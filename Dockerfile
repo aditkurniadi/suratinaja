@@ -30,8 +30,23 @@ RUN composer install \
 FROM serversideup/php:8.3-fpm-nginx-alpine AS runtime
 
 USER root
+
+# Install PHP extensions dan system packages (mysql-client, qpdf, poppler-utils)
 RUN install-php-extensions gd intl zip pdo_mysql bcmath opcache \
-    && apk add --no-cache mysql-client
+    && apk add --no-cache mysql-client qpdf poppler-utils
+
+# Konfigurasi batas upload dan eksekusi PHP produksi
+RUN echo "upload_max_filesize=64M" > /usr/local/etc/php/conf.d/suratinaja-limits.ini \
+    && echo "post_max_size=64M" >> /usr/local/etc/php/conf.d/suratinaja-limits.ini \
+    && echo "memory_limit=512M" >> /usr/local/etc/php/conf.d/suratinaja-limits.ini \
+    && echo "max_execution_time=180" >> /usr/local/etc/php/conf.d/suratinaja-limits.ini
+
+# Konfigurasi drop-in Nginx (timeout & body size)
+COPY docker/nginx-limits.conf /etc/nginx/server-opts.d/suratinaja-limits.conf
+
+# Script startup otomatis untuk migrasi & reset cache permission
+COPY docker/entrypoint.d/99-suratinaja-init.sh /etc/entrypoint.d/99-suratinaja-init.sh
+RUN chmod +x /etc/entrypoint.d/99-suratinaja-init.sh
 
 WORKDIR /var/www/html
 
@@ -47,7 +62,10 @@ ENV PHP_OPCACHE_ENABLE=1 \
     PHP_UPLOAD_MAX_FILE_SIZE=64M \
     PHP_POST_MAX_SIZE=64M \
     NGINX_MAX_BODY_SIZE=64M \
-    PHP_MEMORY_LIMIT=512M
+    PHP_MEMORY_LIMIT=512M \
+    PHP_MAX_EXECUTION_TIME=180 \
+    NGINX_FASTCGI_READ_TIMEOUT=180s \
+    QPDF_BINARY=/usr/bin/qpdf
 
 USER www-data
 

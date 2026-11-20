@@ -101,6 +101,9 @@ class DatabaseSeeder extends Seeder
             }
         }
 
+        // Sync Spatie roles & permissions for seeded workspace members
+        app(\App\Services\Authorization\WorkspacePermissionRegistrar::class)->migrateExistingMembers();
+
         // Build and register global sample .docx template
         $globalRelPath = 'templates/global/undangan-kegiatan-standar.docx';
         $globalAbsPath = Storage::disk('local')->path($globalRelPath);

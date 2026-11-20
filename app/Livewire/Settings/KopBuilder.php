@@ -26,10 +26,13 @@ class KopBuilder extends Component
 
     public $logoRightUpload = null;
 
+    public $kopDocxUpload = null;
+
     public function mount(): void
     {
         $ws = app(CurrentWorkspace::class)->get();
-        if (! $ws || ! $ws->roleOf(auth()->user())?->isAdmin()) {
+        $user = auth()->user();
+        if (! $ws || (! $user?->is_super_admin && ! $ws->roleOf($user)?->isAdmin())) {
             abort(403);
         }
 
@@ -96,7 +99,8 @@ class KopBuilder extends Component
     public function save(): void
     {
         $ws = app(CurrentWorkspace::class)->get();
-        if (! $ws || ! $ws->roleOf(auth()->user())?->isAdmin()) {
+        $user = auth()->user();
+        if (! $ws || (! $user?->is_super_admin && ! $ws->roleOf($user)?->isAdmin())) {
             abort(403);
         }
 
@@ -175,6 +179,56 @@ class KopBuilder extends Component
         }
     }
 
+    public function uploadMasterKop(): void
+    {
+        $ws = app(CurrentWorkspace::class)->get();
+        if (! $ws || ! $ws->roleOf(auth()->user())?->isAdmin()) {
+            abort(403);
+        }
+
+        $this->validate([
+            'kopDocxUpload' => ['required', 'file', 'mimes:docx', 'max:10240'],
+        ]);
+
+        if ($ws->kop_master_docx_path && Storage::disk('local')->exists($ws->kop_master_docx_path)) {
+            Storage::disk('local')->delete($ws->kop_master_docx_path);
+        }
+
+        $path = $this->kopDocxUpload->storeAs("workspaces/{$ws->id}/kop", "master_kop.docx", 'local');
+        $ws->forceFill([
+            'kop_master_docx_path' => $path,
+            'kop_master_version' => ((int) ($ws->kop_master_version ?? 1)) + 1,
+        ])->save();
+
+        $this->kopDocxUpload = null;
+        $this->dispatch('toast', [
+            'type' => 'success',
+            'title' => 'Master Kop .docx berhasil diunggah',
+            'description' => 'File master kop surat tersimpan.',
+        ]);
+    }
+
+    public function deleteMasterKop(): void
+    {
+        $ws = app(CurrentWorkspace::class)->get();
+        if (! $ws || ! $ws->roleOf(auth()->user())?->isAdmin()) {
+            abort(403);
+        }
+
+        if ($ws->kop_master_docx_path && Storage::disk('local')->exists($ws->kop_master_docx_path)) {
+            Storage::disk('local')->delete($ws->kop_master_docx_path);
+        }
+
+        $ws->forceFill([
+            'kop_master_docx_path' => null,
+        ])->save();
+
+        $this->dispatch('toast', [
+            'type' => 'success',
+            'title' => 'Master Kop .docx dihapus',
+        ]);
+    }
+
     public function render()
     {
         $ws = app(CurrentWorkspace::class)->get()?->fresh();
@@ -183,6 +237,12 @@ class KopBuilder extends Component
             'workspace' => $ws,
             'leftDataUri' => $this->logoDataUri($ws?->kop_logo_left),
             'rightDataUri' => $this->logoDataUri($ws?->kop_logo_right),
+        ])->layout('components.layouts.app', [
+            'title' => 'Builder Kop Surat',
+            'breadcrumbs' => [
+                ['label' => 'Konfigurasi', 'url' => route('settings.numbering')],
+                ['label' => 'Builder Kop Surat'],
+            ],
         ]);
     }
 

@@ -4,6 +4,7 @@ namespace App\Livewire\Bulk;
 
 use App\Actions\Bulk\ImportRecipientsAction;
 use App\Actions\Bulk\StartBulkGenerationAction;
+use App\Enums\BulkJobStatus;
 use App\Enums\LetterStatus;
 use App\Exceptions\DomainException;
 use App\Models\BulkJob;
@@ -11,6 +12,8 @@ use App\Models\Letter;
 use App\Models\LetterTemplate;
 use App\Services\Templates\VariableTypeResolver;
 use App\Support\CurrentWorkspace;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Livewire\Attributes\Title;
 use Livewire\Component;
 use Livewire\WithFileUploads;
@@ -63,11 +66,25 @@ class BulkGenerator extends Component
 
     public bool $showBulkModal = false;
 
+    public ?string $previewModalType = null; // 'full_pdf' | 'envelopes' | null
+
+    public ?string $previewJobId = null;
+
+    public ?int $previewEnvelopeTemplateId = null;
+
+    public ?string $previewUrl = null;
+
+    public ?string $previewDownloadUrl = null;
+
+    public ?string $previewTitle = null;
+
+    public int $bulkPreviewVersion = 1;
+
     public function mount(VariableTypeResolver $resolver): void
     {
         $ws = app(CurrentWorkspace::class)->get();
-        if (! $ws || ! $ws->roleOf(auth()->user())?->canWrite()) {
-            abort(403, 'Peran Ketua bersifat read-only dan tidak dapat menjalankan bulk generation.');
+        if (! $ws || ! $ws->hasMember(auth()->user())) {
+            abort(403);
         }
 
         $this->letterDate = now()->toDateString();
@@ -314,8 +331,13 @@ class BulkGenerator extends Component
 
     public function startBulk(StartBulkGenerationAction $action): void
     {
-        $this->errorMessage = null;
         $ws = app(CurrentWorkspace::class)->get();
+        if (! auth()->user()->can('surat_keluar.create') && ! ($ws?->roleOf(auth()->user())?->canWrite())) {
+            $this->errorMessage = 'Anda tidak memiliki hak akses membuat surat massal.';
+            return;
+        }
+
+        $this->errorMessage = null;
 
         $this->validate([
             'templateId' => ['required', 'integer'],
@@ -419,6 +441,13 @@ class BulkGenerator extends Component
 
     public function openBulkModal(): void
     {
+        $ws = app(CurrentWorkspace::class)->get();
+        if (! auth()->user()->can('surat_keluar.create') && ! ($ws?->roleOf(auth()->user())?->canWrite())) {
+            $this->errorMessage = 'Anda tidak memiliki hak akses membuat surat massal.';
+            $this->showBulkModal = false;
+            return;
+        }
+
         $this->resetErrorBag();
         $this->errorMessage = null;
         $this->showBulkModal = true;
@@ -453,6 +482,119 @@ class BulkGenerator extends Component
         return $this->isKegiatan ? strtoupper(trim($this->kodeKegiatan)) : '';
     }
 
+    public function openBatchPdfPreview(string $jobId): void
+    {
+        @set_time_limit(180);
+
+        try {
+            $ws = app(CurrentWorkspace::class)->get();
+            $user = auth()->user();
+            $job = BulkJob::withoutGlobalScopes()->where('workspace_id', $ws?->id)->findOrFail($jobId);
+
+            $role = $ws?->roleOf($user);
+            $canView = (bool) $user?->is_super_admin
+                || ($role?->isAdmin() ?? false)
+                || ($role?->canWrite() ?? false)
+                || $user?->can('bulk.preview_download')
+                || $user?->can('surat_keluar.view');
+
+            if (! $canView) {
+                throw new \RuntimeException('Anda tidak memiliki izin melihat dokumen surat massal.');
+            }
+
+            // Validasi ketersediaan surat atau berkas batch
+            $lettersCount = $job->letters()->count();
+            if ($lettersCount === 0 && (empty($job->output_path) || ! Storage::disk('local')->exists($job->output_path))) {
+                throw new \RuntimeException('Berkas surat atau .docx batch ini belum tersedia di storage.');
+            }
+
+            $this->previewJobId = $jobId;
+            $this->previewModalType = 'full_pdf';
+            $this->previewTitle = 'Pratinjau Gabungan 1 PDF Utuh — Batch #' . substr($jobId, 0, 8);
+            $this->bulkPreviewVersion = time();
+            $this->previewUrl = route('bulk.export.pdf', ['bulkJobId' => $jobId, 'preview' => 1]) . '&v=' . $this->bulkPreviewVersion;
+            $this->previewDownloadUrl = route('bulk.export.pdf', ['bulkJobId' => $jobId, 'download' => 1]);
+        } catch (\Throwable $e) {
+            Log::error("Gagal membuka preview bulk PDF: {$e->getMessage()}", ['job_id' => $jobId]);
+            $this->dispatch('toast', [
+                'type' => 'error',
+                'title' => 'Gagal Membuka Pratinjau PDF',
+                'description' => $e->getMessage(),
+            ]);
+            $this->closePreviewModal();
+        }
+    }
+
+    public function openBatchEnvelopePreview(string $jobId, ?int $templateId = null): void
+    {
+        @set_time_limit(180);
+
+        try {
+            $ws = app(CurrentWorkspace::class)->get();
+            $user = auth()->user();
+            $job = BulkJob::withoutGlobalScopes()->where('workspace_id', $ws?->id)->findOrFail($jobId);
+
+            $role = $ws?->roleOf($user);
+            $canView = (bool) $user?->is_super_admin
+                || ($role?->isAdmin() ?? false)
+                || ($role?->canWrite() ?? false)
+                || $user?->can('amplop.preview_download')
+                || $user?->can('bulk.preview_download')
+                || $user?->can('kop_surat.manage')
+                || $user?->can('surat_keluar.view');
+
+            if (! $canView) {
+                throw new \RuntimeException('Anda tidak memiliki izin melihat amplop surat massal.');
+            }
+
+            $availableTemplates = \App\Models\EnvelopeTemplate::where('workspace_id', $ws?->id)->get();
+            if ($availableTemplates->isEmpty()) {
+                throw new \RuntimeException('Workspace ini belum memiliki Master Template Amplop. Silakan buat template di menu Pengaturan Template Amplop.');
+            }
+
+            if ($templateId !== null) {
+                $this->previewEnvelopeTemplateId = $templateId;
+            } else {
+                $defaultTemplate = $availableTemplates->firstWhere('is_default', true) ?? $availableTemplates->first();
+                $this->previewEnvelopeTemplateId = $defaultTemplate?->id;
+            }
+
+            $this->previewJobId = $jobId;
+            $this->previewModalType = 'envelopes';
+            $this->previewTitle = 'Pratinjau Semua Amplop — Batch #' . substr($jobId, 0, 8);
+            $this->bulkPreviewVersion = time();
+            $params = ['bulkJobId' => $jobId, 'preview' => 1];
+            if ($this->previewEnvelopeTemplateId) {
+                $params['template_id'] = $this->previewEnvelopeTemplateId;
+            }
+            $this->previewUrl = route('bulk.envelopes.download', $params) . '&v=' . $this->bulkPreviewVersion;
+            $this->previewDownloadUrl = route('bulk.envelopes.download', array_merge($params, ['download' => 1]));
+        } catch (\Throwable $e) {
+            Log::error("Gagal membuka preview bulk amplop: {$e->getMessage()}", ['job_id' => $jobId]);
+            $this->dispatch('toast', [
+                'type' => 'error',
+                'title' => 'Gagal Membuka Pratinjau Amplop',
+                'description' => $e->getMessage(),
+            ]);
+            $this->closePreviewModal();
+        }
+    }
+
+    public function changeBatchEnvelopeTemplate(int $templateId): void
+    {
+        if ($this->previewJobId && $this->previewModalType === 'envelopes') {
+            $this->openBatchEnvelopePreview($this->previewJobId, $templateId);
+        }
+    }
+
+    public function closePreviewModal(): void
+    {
+        $this->previewModalType = null;
+        $this->previewJobId = null;
+        $this->previewUrl = null;
+        $this->previewDownloadUrl = null;
+    }
+
     public function render(VariableTypeResolver $resolver)
     {
         $ws = app(CurrentWorkspace::class)->get();
@@ -484,7 +626,7 @@ class BulkGenerator extends Component
         $liveNumberPreview = null;
         try {
             $dateObj = \Carbon\Carbon::parse($this->letterDate ?: now());
-            $nextSeq = ($ws?->numbers()->max('sequence') ?? 0) + 1;
+            $nextSeq = app(\App\Services\Numbering\NumberAllocator::class)->resolveNextSequence($ws, $dateObj);
             $liveNumberPreview = app(\App\Services\Numbering\NumberPatternRenderer::class)->render(
                 $ws->number_pattern,
                 $ws,
@@ -500,9 +642,17 @@ class BulkGenerator extends Component
             $liveNumberPreview = null;
         }
 
+        $envelopeTemplates = $ws
+            ? \App\Models\EnvelopeTemplate::where('workspace_id', $ws->id)->get()
+            : collect();
+
+        $hasActiveJobs = $jobs->contains(fn ($j) => in_array($j->status, [BulkJobStatus::Queued, BulkJobStatus::Processing, 'queued', 'processing', 'pending'], true));
+
         return view('livewire.bulk.bulk-generator', [
             'workspace' => $ws,
+            'canCreate' => (bool) (auth()->user()?->can('surat_keluar.create') || ($ws?->roleOf(auth()->user())?->canWrite() ?? false)),
             'templates' => $templates,
+            'envelopeTemplates' => $envelopeTemplates,
             'recentLetters' => $recentLetters,
             'selectedTemplate' => $selectedTemplate,
             'allEditableFields' => $allEditableFields,
@@ -510,9 +660,16 @@ class BulkGenerator extends Component
             'sharedFields' => $sharedFields,
             'queueItems' => $this->combinedQueue(),
             'jobs' => $jobs,
+            'hasActiveJobs' => $hasActiveJobs,
             'letterTypes' => $ws?->letterTypes() ?? config('suratinaja.letter_types', []),
             'letterParameters' => config('suratinaja.letter_parameters', []),
             'liveNumberPreview' => $liveNumberPreview,
+        ])->layout('components.layouts.app', [
+            'title' => 'Bulk Generate Surat',
+            'breadcrumbs' => [
+                ['label' => 'Persuratan', 'url' => route('dashboard')],
+                ['label' => 'Bulk Generate'],
+            ],
         ]);
     }
 }

@@ -127,6 +127,16 @@
         </x-ui.card-header>
 
         <x-ui.card-content class="pt-6">
+            @if ($calendarContextNote)
+                <div class="mb-5 p-3 rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 text-xs text-blue-800 dark:text-blue-300 flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                        <x-lucide-calendar class="size-4 text-blue-600 shrink-0" />
+                        <span>{{ $calendarContextNote }}</span>
+                    </div>
+                    <button type="button" wire:click="$set('calendarContextNote', null)" class="text-blue-500 hover:text-blue-700 text-base leading-none">&times;</button>
+                </div>
+            @endif
+
             @if ($errorMessage)
                 <x-ui.alert variant="destructive" title="Terjadi Kesalahan" class="mb-5">
                     {{ $errorMessage }}
@@ -227,21 +237,110 @@
                         </div>
                     @endif
 
-                    {{-- Metadata Surat (Perihal, Tanggal, Kota) --}}
-                    <div class="grid grid-cols-1 sm:grid-cols-4 gap-4">
-                        <div class="sm:col-span-2">
+                    {{-- Opsi Membalas Surat Masuk --}}
+                    <div class="rounded-xl border border-border bg-emerald-500/5 dark:bg-emerald-500/10 p-4 space-y-3">
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center gap-2">
+                                <x-lucide-reply class="size-4 text-emerald-600 dark:text-emerald-400" />
+                                <span class="text-xs font-semibold text-foreground uppercase tracking-wider">
+                                    Membalas Surat Masuk (Opsional)
+                                </span>
+                            </div>
+                            @if ($replyToSuratMasukId)
+                                <button
+                                    type="button"
+                                    wire:click="removeReplySuratMasuk"
+                                    class="text-xs text-muted-foreground hover:text-destructive flex items-center gap-1 cursor-pointer"
+                                >
+                                    <x-lucide-x class="size-3" />
+                                    <span>Hapus Tautan</span>
+                                </button>
+                            @endif
+                        </div>
+                        <p class="text-xs text-muted-foreground">
+                            Hubungkan surat ini sebagai balasan atas surat masuk tertentu agar rantai surat tercatat rapi dan perihal/penerima terisi otomatis.
+                        </p>
+
+                        @if ($selectedSuratMasuk)
+                            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-lg border border-emerald-300 dark:border-emerald-800 bg-white dark:bg-card">
+                                <div class="space-y-1">
+                                    <div class="flex items-center gap-2">
+                                        <span class="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-mono font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300">
+                                            {{ $selectedSuratMasuk->nomor_agenda }}
+                                        </span>
+                                        <span class="text-xs font-medium text-foreground">
+                                            {{ $selectedSuratMasuk->pengirim }}
+                                        </span>
+                                    </div>
+                                    <p class="text-xs text-muted-foreground line-clamp-1">
+                                        {{ $selectedSuratMasuk->perihal }}
+                                    </p>
+                                    @if ($selectedSuratMasuk->nomor_surat_pengirim)
+                                        <p class="text-[11px] font-mono text-muted-foreground">
+                                            No. Surat: {{ $selectedSuratMasuk->nomor_surat_pengirim }}
+                                        </p>
+                                    @endif
+                                </div>
+                                <div class="flex items-center gap-2 shrink-0">
+                                    <x-ui.button
+                                        type="button"
+                                        size="xs"
+                                        variant="outline"
+                                        wire:click="openSelectSmModal"
+                                        class="gap-1"
+                                    >
+                                        <x-lucide-repeat class="size-3" />
+                                        <span>Ganti</span>
+                                    </x-ui.button>
+                                    <x-ui.button
+                                        type="button"
+                                        size="xs"
+                                        variant="ghost"
+                                        wire:click="removeReplySuratMasuk"
+                                        class="text-destructive hover:bg-destructive/10"
+                                    >
+                                        <x-lucide-trash-2 class="size-3" />
+                                    </x-ui.button>
+                                </div>
+                            </div>
+                        @else
+                            <div>
+                                <x-ui.button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    wire:click="openSelectSmModal"
+                                    class="gap-2 border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-300"
+                                >
+                                    <x-lucide-search class="size-3.5" />
+                                    <span>Cari &amp; Pilih Surat Masuk yang Dibalas...</span>
+                                </x-ui.button>
+                            </div>
+                        @endif
+                    </div>
+
+                    {{-- Metadata Surat (Perihal, Tanggal Surat, Tanggal Kegiatan, Kota) --}}
+                    <div class="grid grid-cols-1 sm:grid-cols-12 gap-4">
+                        <div class="sm:col-span-5">
                             <x-ui.label for="perihal">Hal / Perihal Surat (${perihal}) <span class="text-destructive">*</span></x-ui.label>
                             <x-ui.input id="perihal" wire:model.live.debounce.300ms="perihal" class="mt-1.5" placeholder="Mis. Permohonan Izin Tempat &amp; Sound System" required />
                             <x-ui.form-error for="perihal" />
                         </div>
 
-                        <div>
+                        <div class="sm:col-span-3">
                             <x-ui.label for="letterDate">Tanggal Surat <span class="text-destructive">*</span></x-ui.label>
                             <x-ui.input id="letterDate" type="date" wire:model.live="letterDate" class="mt-1.5" required />
                             <x-ui.form-error for="letterDate" />
                         </div>
 
-                        <div>
+                        <div class="sm:col-span-2">
+                            <x-ui.label for="tanggalKegiatan">Tanggal Kegiatan</x-ui.label>
+                            <x-ui.input id="tanggalKegiatan" type="date" wire:model.live="tanggalKegiatan" class="mt-1.5" />
+                            <span class="text-[10px] text-muted-foreground">Opsional (Kalender)</span>
+                            <x-ui.form-error for="tanggalKegiatan" />
+                        </div>
+
+                        <div class="sm:col-span-2">
                             <x-ui.label for="city">Kota Surat</x-ui.label>
                             <x-ui.input id="city" wire:model.live.debounce.300ms="city" class="mt-1.5" placeholder="Cilacap" />
                             <x-ui.form-error for="city" />
@@ -738,4 +837,98 @@
             @endif
         </x-ui.card-content>
     </x-ui.card>
+
+    {{-- MODAL PENCARIAN SURAT MASUK --}}
+    @if ($showSelectSmModal)
+        <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs" role="dialog" aria-modal="true">
+            <div class="w-full max-w-2xl rounded-xl border border-border bg-background p-6 shadow-2xl space-y-4 max-h-[85vh] flex flex-col">
+                <div class="flex items-center justify-between border-b border-border pb-3 shrink-0">
+                    <div class="flex items-center gap-2">
+                        <x-lucide-reply class="size-4 text-emerald-600" />
+                        <h3 class="text-base font-semibold text-foreground">Cari Surat Masuk untuk Dibalas</h3>
+                    </div>
+                    <button type="button" wire:click="closeSelectSmModal" class="text-muted-foreground hover:text-foreground cursor-pointer">
+                        <x-lucide-x class="size-4" />
+                    </button>
+                </div>
+
+                <div class="shrink-0 space-y-2">
+                    <div class="relative">
+                        <x-lucide-search class="absolute left-3 top-2.5 size-4 text-muted-foreground" />
+                        <x-ui.input
+                            type="search"
+                            wire:model.live.debounce.300ms="searchSuratMasuk"
+                            placeholder="Ketik nomor agenda, nomor surat, pengirim, atau perihal surat..."
+                            class="pl-9 text-xs"
+                            autofocus
+                        />
+                    </div>
+                    <p class="text-[11px] text-muted-foreground">
+                        Hasil pencarian langsung diperbarui saat Anda mengetik.
+                    </p>
+                </div>
+
+                <div class="flex-1 overflow-y-auto divide-y divide-border border border-border rounded-lg min-h-[200px]">
+                    @forelse ($suratMasukList as $sm)
+                        <div class="p-3 hover:bg-muted/40 transition-colors flex items-center justify-between gap-3 text-xs">
+                            <div class="space-y-1 min-w-0">
+                                <div class="flex items-center gap-2 flex-wrap">
+                                    <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
+                                        {{ $sm->nomor_agenda }}
+                                    </span>
+                                    <span class="font-semibold text-foreground truncate">
+                                        {{ $sm->pengirim }}
+                                    </span>
+                                    @if ($sm->tanggal_surat)
+                                        <span class="text-[10px] text-muted-foreground">
+                                            ({{ \Carbon\Carbon::parse($sm->tanggal_surat)->format('d/m/Y') }})
+                                        </span>
+                                    @endif
+                                </div>
+                                <p class="text-muted-foreground line-clamp-1">
+                                    {{ $sm->perihal }}
+                                </p>
+                                @if ($sm->nomor_surat_pengirim)
+                                    <p class="text-[10px] font-mono text-muted-foreground truncate">
+                                        No. Asli: {{ $sm->nomor_surat_pengirim }}
+                                    </p>
+                                @endif
+                            </div>
+                            <div class="shrink-0">
+                                @if ($replyToSuratMasukId === $sm->id)
+                                    <span class="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-600 px-2 py-1 rounded bg-emerald-50 dark:bg-emerald-950/50">
+                                        <x-lucide-check class="size-3" />
+                                        <span>Terpilih</span>
+                                    </span>
+                                @else
+                                    <x-ui.button
+                                        type="button"
+                                        size="xs"
+                                        class="bg-emerald-600 hover:bg-emerald-700 text-white"
+                                        wire:click="selectSuratMasuk({{ $sm->id }})"
+                                    >
+                                        Pilih
+                                    </x-ui.button>
+                                @endif
+                            </div>
+                        </div>
+                    @empty
+                        <div class="p-8 text-center text-xs text-muted-foreground">
+                            <x-lucide-inbox class="size-8 mx-auto mb-2 text-muted-foreground/50" />
+                            <p>Tidak ada surat masuk yang sesuai dengan kata kunci pencarian.</p>
+                        </div>
+                    @endforelse
+                </div>
+
+                <div class="flex justify-between items-center pt-2 border-t border-border shrink-0">
+                    <span class="text-[11px] text-muted-foreground">
+                        Menampilkan hingga 20 surat masuk terbaru.
+                    </span>
+                    <x-ui.button type="button" variant="outline" size="xs" wire:click="closeSelectSmModal">
+                        Tutup
+                    </x-ui.button>
+                </div>
+            </div>
+        </div>
+    @endif
 </div>

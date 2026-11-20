@@ -297,6 +297,12 @@ class TemplatesIndex extends Component
             'role' => $role,
             'workspaceTemplates' => $workspaceTemplates,
             'globalTemplates' => $globalTemplates,
+        ])->layout('components.layouts.app', [
+            'title' => 'Library Template',
+            'breadcrumbs' => [
+                ['label' => 'Dokumen & Template'],
+                ['label' => 'Library Template'],
+            ],
         ]);
     }
 }

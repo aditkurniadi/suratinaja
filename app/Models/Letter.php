@@ -21,8 +21,10 @@ class Letter extends Model
         'created_by',
         'bulk_job_id',
         'duplicated_from_id',
+        'surat_masuk_id',
         'perihal',
         'letter_date',
+        'tanggal_kegiatan',
         'status',
         'field_values',
         'generated_file_path',
@@ -40,6 +42,7 @@ class Letter extends Model
         return [
             'status' => LetterStatus::class,
             'letter_date' => 'date',
+            'tanggal_kegiatan' => 'date',
             'field_values' => 'array',
             'version' => 'integer',
             'is_manual_number' => 'boolean',
@@ -61,6 +64,11 @@ class Letter extends Model
     public function duplicatedFrom(): BelongsTo
     {
         return $this->belongsTo(self::class, 'duplicated_from_id')->withoutGlobalScopes();
+    }
+
+    public function suratMasuk(): BelongsTo
+    {
+        return $this->belongsTo(SuratMasuk::class, 'surat_masuk_id')->withoutGlobalScopes();
     }
 
     public function bulkJob(): BelongsTo
@@ -100,6 +108,14 @@ class Letter extends Model
 
     public function getFormattedNumberAttribute(): ?string
     {
+        if ($this->relationLoaded('activeNumber') && $this->activeNumber) {
+            return $this->activeNumber->formatted_number;
+        }
+
+        if ($this->relationLoaded('latestNumber') && $this->latestNumber) {
+            return $this->latestNumber->formatted_number;
+        }
+
         return $this->activeNumber?->formatted_number ?? $this->latestNumber?->formatted_number;
     }
 }

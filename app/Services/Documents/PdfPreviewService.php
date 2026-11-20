@@ -57,7 +57,7 @@ class PdfPreviewService
         $relativePdf = "previews/{$letter->workspace_id}/letter-{$letter->id}-v{$letter->version}.pdf";
 
         try {
-            $response = Http::connectTimeout(2)
+            $response = Http::connectTimeout(1)
                 ->timeout($timeout)
                 ->attach('files', fopen($docxAbs, 'r'), "letter-{$letter->id}.docx")
                 ->post("{$baseUrl}/forms/libreoffice/convert");

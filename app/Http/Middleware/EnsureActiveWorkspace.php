@@ -26,6 +26,8 @@ class EnsureActiveWorkspace
         }
 
         app(CurrentWorkspace::class)->set($workspace);
+        setPermissionsTeamId($workspace->id);
+        app(\App\Services\Authorization\WorkspacePermissionRegistrar::class)->ensureUserRoleSynced($workspace, $user);
 
         return $next($request);
     }

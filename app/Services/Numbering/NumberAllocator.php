@@ -29,6 +29,29 @@ class NumberAllocator
     }
 
     /**
+     * Resolve the next sequence number to be issued (Single Source of Truth).
+     * Always takes max(highestIssuedInLetterNumbers, lastConfiguredInSequences) + 1.
+     */
+    public function resolveNextSequence(Workspace $workspace, CarbonInterface $date): int
+    {
+        $periodKey = $this->periodKey($date);
+
+        $highestIssued = (int) (LetterNumber::withoutGlobalScopes()
+            ->where('workspace_id', $workspace->id)
+            ->where('period_key', $periodKey)
+            ->max('sequence') ?? 0);
+
+        $seqRow = DB::table('letter_number_sequences')
+            ->where('workspace_id', $workspace->id)
+            ->where('period_key', $periodKey)
+            ->first();
+
+        $lastConfigured = $seqRow ? (int) $seqRow->last_sequence : 0;
+
+        return max($highestIssued, $lastConfigured) + 1;
+    }
+
+    /**
      * Atomically allocates the next formatted number and inserts a LetterNumber row.
      * Uses SELECT ... FOR UPDATE on letter_number_sequences inside a DB transaction.
      *
@@ -62,7 +85,13 @@ class NumberAllocator
                         ->lockForUpdate()
                         ->first();
 
-                    $nextSeq = ((int) $seqRow->last_sequence) + 1;
+                    $highestIssued = (int) (LetterNumber::withoutGlobalScopes()
+                        ->where('workspace_id', $workspace->id)
+                        ->where('period_key', $periodKey)
+                        ->max('sequence') ?? 0);
+
+                    $currentLast = max((int) ($seqRow?->last_sequence ?? 0), $highestIssued);
+                    $nextSeq = $currentLast + 1;
 
                     DB::table('letter_number_sequences')
                         ->where('id', $seqRow->id)

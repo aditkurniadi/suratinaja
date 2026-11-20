@@ -214,6 +214,7 @@ class TemplateEditor extends Component
                 ['label' => $this->template->isGlobal() && auth()->user()?->is_super_admin ? 'Template Global' : 'Library Template', 'url' => $backUrl],
                 ['label' => $this->template->name],
             ],
+            'backUrl' => $backUrl,
         ]);
     }
 }

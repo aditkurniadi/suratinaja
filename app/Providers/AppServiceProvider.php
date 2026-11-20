@@ -24,15 +24,21 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
-        if (config('app.env') === 'production' || str_starts_with(config('app.url', ''), 'https://')) {
+        if ($this->app->environment('production') && str_starts_with((string) config('app.url', ''), 'https://')) {
             URL::forceScheme('https');
         }
 
         Carbon::setLocale(config('app.locale', 'id'));
         PhpWordSettings::setOutputEscapingEnabled(true);
 
+        Gate::before(function ($user, $ability) {
+            return $user->is_super_admin ? true : null;
+        });
+
         Gate::policy(Workspace::class, WorkspacePolicy::class);
         Gate::policy(Letter::class, LetterPolicy::class);
         Gate::policy(LetterTemplate::class, LetterTemplatePolicy::class);
+        Gate::policy(\App\Models\SuratMasuk::class, \App\Policies\SuratMasukPolicy::class);
+        Gate::policy(\App\Models\Disposisi::class, \App\Policies\DisposisiPolicy::class);
     }
 }

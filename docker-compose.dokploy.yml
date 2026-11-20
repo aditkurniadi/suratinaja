@@ -7,6 +7,7 @@ services:
     expose:
       - "8080"
     environment:
+      CONTAINER_ROLE: "app"
       APP_NAME: "${APP_NAME:-SuratinAja}"
       APP_ENV: "${APP_ENV:-production}"
       APP_DEBUG: "${APP_DEBUG:-false}"
@@ -27,7 +28,8 @@ services:
       ONLYOFFICE_JWT_SECRET: "${ONLYOFFICE_JWT_SECRET}"
       SUPERADMIN_EMAIL: "${SUPERADMIN_EMAIL:-admin@organisasi.id}"
       SUPERADMIN_PASSWORD: "${SUPERADMIN_PASSWORD:-PasswordKuat123!}"
-      AUTORUN_LARAVEL_MIGRATION: "false"
+      AUTORUN_LARAVEL_MIGRATION: "true"
+      QPDF_BINARY: "/usr/bin/qpdf"
     volumes:
       - suratinaja-storage:/var/www/html/storage
     networks:
@@ -42,8 +44,9 @@ services:
       context: .
       dockerfile: Dockerfile
     restart: unless-stopped
-    command: ["php", "/var/www/html/artisan", "queue:work", "--tries=3", "--timeout=120", "--sleep=3"]
+    command: ["php", "/var/www/html/artisan", "queue:work", "--tries=3", "--timeout=180", "--sleep=3"]
     environment:
+      CONTAINER_ROLE: "worker"
       APP_NAME: "${APP_NAME:-SuratinAja}"
       APP_ENV: "${APP_ENV:-production}"
       APP_KEY: "${APP_KEY}"
@@ -55,6 +58,11 @@ services:
       DB_PASSWORD: "${DB_PASSWORD:-}"
       QUEUE_CONNECTION: database
       GOTENBERG_URL: "http://gotenberg:3000"
+      ONLYOFFICE_URL: "${ONLYOFFICE_URL}"
+      ONLYOFFICE_INTERNAL_URL: "${ONLYOFFICE_INTERNAL_URL:-http://onlyoffice:80}"
+      ONLYOFFICE_JWT_SECRET: "${ONLYOFFICE_JWT_SECRET}"
+      AUTORUN_LARAVEL_MIGRATION: "false"
+      QPDF_BINARY: "/usr/bin/qpdf"
     volumes:
       - suratinaja-storage:/var/www/html/storage
     networks:
@@ -70,6 +78,7 @@ services:
     restart: unless-stopped
     command: ["php", "/var/www/html/artisan", "schedule:work"]
     environment:
+      CONTAINER_ROLE: "scheduler"
       APP_NAME: "${APP_NAME:-SuratinAja}"
       APP_ENV: "${APP_ENV:-production}"
       APP_KEY: "${APP_KEY}"
@@ -79,6 +88,7 @@ services:
       DB_DATABASE: "${DB_DATABASE:-suratinaja}"
       DB_USERNAME: "${DB_USERNAME:-root}"
       DB_PASSWORD: "${DB_PASSWORD:-}"
+      AUTORUN_LARAVEL_MIGRATION: "false"
     volumes:
       - suratinaja-storage:/var/www/html/storage
     networks:
@@ -104,6 +114,7 @@ services:
       - JWT_SECRET=${ONLYOFFICE_JWT_SECRET:-suratinaja-onlyoffice-secret-key-12345}
       - JWT_HEADER=Authorization
       - USE_UNAUTHORIZED_STORAGE=true
+      - ALLOW_PRIVATE_IP_ADDRESS=true
     volumes:
       - onlyoffice-data:/var/www/onlyoffice/Data
       - onlyoffice-log:/var/log/onlyoffice

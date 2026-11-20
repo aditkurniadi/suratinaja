@@ -72,6 +72,14 @@ class Workspace extends Model
                 $ws->seq_padding = (int) config('suratinaja.numbering.default_padding', 3);
             }
         });
+
+        static::created(function (Workspace $ws) {
+            try {
+                app(\App\Services\Authorization\WorkspacePermissionRegistrar::class)->initWorkspaceRoles($ws);
+            } catch (\Throwable) {
+                // Silently continue if tables not yet ready or in testing seeds
+            }
+        });
     }
 
     public function members(): HasMany
@@ -100,6 +108,11 @@ class Workspace extends Model
         return $this->hasMany(Letter::class)->withoutGlobalScopes();
     }
 
+    public function suratMasuks(): HasMany
+    {
+        return $this->hasMany(\App\Models\SuratMasuk::class);
+    }
+
     public function numbers(): HasMany
     {
         return $this->hasMany(LetterNumber::class)->withoutGlobalScopes();
@@ -115,15 +128,30 @@ class Workspace extends Model
         return $this->members()->where('user_id', $user->id)->exists();
     }
 
+    /** @var array<int, ?WorkspaceRole> */
+    protected array $userRolesMemo = [];
+
     public function roleOf(User $user): ?WorkspaceRole
     {
-        $role = $this->members()->where('user_id', $user->id)->value('role');
-
-        if ($role instanceof WorkspaceRole) {
-            return $role;
+        if (array_key_exists($user->id, $this->userRolesMemo)) {
+            return $this->userRolesMemo[$user->id];
         }
 
-        return is_string($role) ? WorkspaceRole::tryFrom($role) : null;
+        if ($this->relationLoaded('members')) {
+            $member = $this->members->firstWhere('user_id', $user->id);
+            $role = $member?->role;
+        } else {
+            $role = $this->members()->where('user_id', $user->id)->value('role');
+        }
+
+        $resolved = null;
+        if ($role instanceof WorkspaceRole) {
+            $resolved = $role;
+        } elseif (is_string($role)) {
+            $resolved = WorkspaceRole::tryFrom($role);
+        }
+
+        return $this->userRolesMemo[$user->id] = $resolved;
     }
 
     public function hasKop(): bool

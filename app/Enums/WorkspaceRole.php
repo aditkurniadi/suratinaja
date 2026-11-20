@@ -7,6 +7,7 @@ enum WorkspaceRole: string
     case Admin = 'admin';
     case Secretary = 'secretary';
     case Chairman = 'chairman';
+    case Member = 'member';
 
     public function label(): string
     {
@@ -14,13 +15,14 @@ enum WorkspaceRole: string
             self::Admin => 'Admin',
             self::Secretary => 'Sekretaris',
             self::Chairman => 'Ketua',
+            self::Member => 'Anggota',
         };
     }
 
     /** Roles allowed to create/update letters, templates, bulk jobs. */
     public function canWrite(): bool
     {
-        return $this !== self::Chairman;
+        return $this === self::Admin || $this === self::Secretary;
     }
 
     public function isAdmin(): bool
