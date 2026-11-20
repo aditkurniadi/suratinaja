@@ -211,11 +211,14 @@ class SuperadminDashboard extends Component
 
     public function render()
     {
+        $hasStatus = \Illuminate\Support\Facades\Schema::hasColumn('users', 'status');
+        $hasDemo = \Illuminate\Support\Facades\Schema::hasColumn('users', 'is_demo');
+
         $globalStats = [
             'totalUsers' => User::count(),
-            'activeUsers' => User::where('status', 'active')->count(),
-            'suspendedUsers' => User::where('status', 'suspended')->count(),
-            'demoUsers' => User::where('is_demo', true)->count(),
+            'activeUsers' => $hasStatus ? User::where('status', 'active')->count() : User::count(),
+            'suspendedUsers' => $hasStatus ? User::where('status', 'suspended')->count() : 0,
+            'demoUsers' => $hasDemo ? User::where('is_demo', true)->count() : 0,
             'totalWorkspaces' => Workspace::count(),
             'totalLetters' => Letter::count(),
             'totalSuratMasuk' => SuratMasuk::count(),
@@ -234,9 +237,9 @@ class SuperadminDashboard extends Component
                         ->orWhere('email', 'like', $term);
                 });
             })
-            ->when($this->statusFilter === 'active', fn ($q) => $q->where('status', 'active'))
-            ->when($this->statusFilter === 'suspended', fn ($q) => $q->where('status', 'suspended'))
-            ->when($this->statusFilter === 'demo', fn ($q) => $q->where('is_demo', true))
+            ->when($hasStatus && $this->statusFilter === 'active', fn ($q) => $q->where('status', 'active'))
+            ->when($hasStatus && $this->statusFilter === 'suspended', fn ($q) => $q->where('status', 'suspended'))
+            ->when($hasDemo && $this->statusFilter === 'demo', fn ($q) => $q->where('is_demo', true))
             ->orderBy('id', 'desc');
 
         $users = $usersQuery->paginate(10);
