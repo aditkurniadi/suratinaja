@@ -33,6 +33,8 @@ class TemplatesIndex extends Component
 
     public string $newStarterMode = 'starter';
 
+    public $newTemplateFile = null;
+
     public ?string $createError = null;
 
     public bool $showGuideModal = false;
@@ -81,7 +83,7 @@ class TemplatesIndex extends Component
             if ($ext !== 'docx') {
                 throw DomainException::templateInvalid('Format file harus .docx.');
             }
-            $this->detectedVariables = $parser->parse($this->templateFile->getRealPath());
+            $this->detectedVariables = $parser->parse($this->templateFile->getRealPath(), allowEmpty: true);
             if ($this->templateName === '') {
                 $this->templateName = pathinfo($this->templateFile->getClientOriginalName(), PATHINFO_FILENAME);
             }
@@ -106,8 +108,10 @@ class TemplatesIndex extends Component
             'hasEmbeddedKop' => ['boolean'],
         ]);
 
+        $hasNoVars = empty($this->detectedVariables);
+
         try {
-            $action->execute(
+            $tpl = $action->execute(
                 $this->templateFile,
                 $this->templateName,
                 auth()->user(),
@@ -115,6 +119,7 @@ class TemplatesIndex extends Component
                 TemplateScope::Workspace,
                 $this->templateDescription ?: null,
                 $this->hasEmbeddedKop,
+                allowEmptyVariables: true,
             );
         } catch (DomainException $e) {
             $this->uploadError = $e->getMessage();
@@ -123,6 +128,19 @@ class TemplatesIndex extends Component
         }
 
         $this->reset(['showUploadModal', 'templateName', 'templateDescription', 'hasEmbeddedKop', 'templateFile', 'detectedVariables', 'uploadError']);
+
+        if ($hasNoVars) {
+            $this->dispatch('toast', [
+                'type' => 'info',
+                'title' => 'Dokumen berhasil diunggah',
+                'description' => 'Membuka Editor OnlyOffice untuk menambahkan variabel surat...',
+            ]);
+
+            $this->redirect(route('templates.edit', $tpl->id), navigate: false);
+
+            return;
+        }
+
         $this->activeTab = 'workspace';
         $this->dispatch('toast', [
             'type' => 'success',
@@ -130,7 +148,7 @@ class TemplatesIndex extends Component
         ]);
     }
 
-    public function createInOnlyOffice(CreateBlankTemplateAction $action): void
+    public function createInOnlyOffice(CreateBlankTemplateAction $action, UploadTemplateAction $uploadAction): void
     {
         $ws = app(CurrentWorkspace::class)->get();
         if (! $ws || ! $ws->roleOf(auth()->user())?->canWrite()) {
@@ -142,26 +160,40 @@ class TemplatesIndex extends Component
             'newTemplateName' => ['required', 'string', 'max:150'],
             'newTemplateDescription' => ['nullable', 'string', 'max:500'],
             'newHasEmbeddedKop' => ['boolean'],
-            'newStarterMode' => ['required', 'in:starter,blank'],
+            'newStarterMode' => ['required', 'in:starter,blank,upload'],
+            'newTemplateFile' => ['nullable', 'required_if:newStarterMode,upload', 'file', 'max:51200'],
         ]);
 
         try {
-            $tpl = $action->execute(
-                $this->newTemplateName,
-                auth()->user(),
-                $ws,
-                TemplateScope::Workspace,
-                $this->newTemplateDescription ?: null,
-                $this->newHasEmbeddedKop,
-                $this->newStarterMode,
-            );
+            if ($this->newStarterMode === 'upload' && $this->newTemplateFile) {
+                $tpl = $uploadAction->execute(
+                    $this->newTemplateFile,
+                    $this->newTemplateName,
+                    auth()->user(),
+                    $ws,
+                    TemplateScope::Workspace,
+                    $this->newTemplateDescription ?: null,
+                    $this->newHasEmbeddedKop,
+                    allowEmptyVariables: true,
+                );
+            } else {
+                $tpl = $action->execute(
+                    $this->newTemplateName,
+                    auth()->user(),
+                    $ws,
+                    TemplateScope::Workspace,
+                    $this->newTemplateDescription ?: null,
+                    $this->newHasEmbeddedKop,
+                    $this->newStarterMode,
+                );
+            }
         } catch (DomainException $e) {
             $this->createError = $e->getMessage();
 
             return;
         }
 
-        $this->reset(['showCreateModal', 'newTemplateName', 'newTemplateDescription', 'newHasEmbeddedKop', 'newStarterMode', 'createError']);
+        $this->reset(['showCreateModal', 'newTemplateName', 'newTemplateDescription', 'newHasEmbeddedKop', 'newStarterMode', 'newTemplateFile', 'createError']);
         $this->redirect(route('templates.edit', $tpl->id), navigate: false);
     }
 

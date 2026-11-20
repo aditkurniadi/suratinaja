@@ -328,6 +328,13 @@
                                 <span>Duplikasi Surat</span>
                             </button>
 
+                            @if ($this->canDelete)
+                                <button type="button" @click="isActionDropdownOpen = false; $wire.set('showDeleteModal', true)" class="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md hover:bg-destructive/10 text-destructive text-left transition-colors cursor-pointer">
+                                    <x-lucide-trash-2 class="size-3.5" />
+                                    <span>Hapus Draf Surat</span>
+                                </button>
+                            @endif
+
                             @if ($letter->status !== \App\Enums\LetterStatus::Dibatalkan && (auth()->user()->can('surat_keluar.delete') || ($role?->canWrite() ?? false)))
                                 <div class="my-1 border-t border-border"></div>
                                 <button type="button" @click="isActionDropdownOpen = false; $wire.set('showCancelModal', true)" class="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md hover:bg-destructive/10 text-destructive text-left transition-colors cursor-pointer">
@@ -789,6 +796,54 @@
         </div>
     @endif
 
+    {{-- MODAL 4B: Hapus Draf Surat (Nomor Tidak Hangus) --}}
+    @if ($showDeleteModal)
+        <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs" role="dialog" aria-modal="true">
+            <div class="w-full max-w-md rounded-xl border border-border bg-background p-6 shadow-2xl space-y-4">
+                <div class="flex items-start gap-3">
+                    <div class="p-2 rounded-full bg-destructive/10 text-destructive shrink-0">
+                        <x-lucide-trash-2 class="size-5" />
+                    </div>
+                    <div>
+                        <h3 class="text-base font-semibold text-destructive">Hapus Draf Surat</h3>
+                        <p class="mt-1 text-xs text-muted-foreground leading-relaxed">
+                            Surat ini belum ditandatangani. Menghapus surat ini akan menghapus dokumen draf dan <strong>melepaskan nomor surat <code class="font-mono text-foreground font-semibold">{{ $letter->formatted_number }}</code></strong> agar dapat digunakan kembali oleh surat berikutnya (nomor tidak hangus).
+                        </p>
+                    </div>
+                </div>
+
+                @if ($deleteError)
+                    <x-ui.alert variant="destructive">
+                        {{ $deleteError }}
+                    </x-ui.alert>
+                @endif
+
+                <div class="rounded-lg border border-border bg-muted/40 p-3 text-xs space-y-1">
+                    <div class="flex justify-between">
+                        <span class="text-muted-foreground">Nomor Surat:</span>
+                        <span class="font-mono font-medium text-foreground">{{ $letter->formatted_number ?: '—' }}</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-muted-foreground">Perihal:</span>
+                        <span class="font-medium text-foreground truncate max-w-[200px]">{{ $letter->perihal }}</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-muted-foreground">Status:</span>
+                        <x-ui.status-badge :status="$letter->status" />
+                    </div>
+                </div>
+
+                <div class="flex justify-end gap-2 pt-2 border-t border-border">
+                    <x-ui.button variant="outline" wire:click="$set('showDeleteModal', false)">Batal</x-ui.button>
+                    <x-ui.button variant="destructive" wire:click="confirmDelete" class="gap-1.5">
+                        <x-lucide-trash-2 class="size-3.5" />
+                        <span>Ya, Hapus Draf &amp; Lepaskan Nomor</span>
+                    </x-ui.button>
+                </div>
+            </div>
+        </div>
+    @endif
+
     {{-- MODAL 5: Batalkan Surat (Livewire Dialog) --}}
     @if ($showCancelModal)
         <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs" role="dialog" aria-modal="true">
@@ -797,6 +852,30 @@
                 <p class="mt-1 text-xs text-muted-foreground">
                     Nomor <code class="font-mono text-foreground">{{ $letter->formatted_number }}</code> akan berstatus <strong>HANGUS</strong> secara permanen dan surat tetap tersimpan di riwayat audit.
                 </p>
+
+                @if ($this->canDelete)
+                    <div class="mt-3 rounded-lg border border-indigo-500/30 bg-indigo-50/50 dark:bg-indigo-950/20 p-3 text-xs space-y-1.5">
+                        <div class="flex items-center gap-1.5 font-semibold text-indigo-700 dark:text-indigo-400">
+                            <x-lucide-info class="size-4 shrink-0" />
+                            <span>Surat Belum Ditandatangani</span>
+                        </div>
+                        <p class="text-muted-foreground leading-relaxed">
+                            Jika surat ini baru berupa draf yang salah buat dan Anda ingin <strong>melepaskan kembali nomor suratnya (tidak hangus)</strong>, gunakan fitur <strong>Hapus Draf</strong> alih-alih pembatalan resmi.
+                        </p>
+                        <div class="pt-1">
+                            <x-ui.button
+                                type="button"
+                                variant="destructive"
+                                size="sm"
+                                wire:click="$set('showCancelModal', false); $set('showDeleteModal', true)"
+                                class="gap-1.5"
+                            >
+                                <x-lucide-trash-2 class="size-3.5" />
+                                <span>Pilih Hapus Draf (Nomor Tidak Hangus)</span>
+                            </x-ui.button>
+                        </div>
+                    </div>
+                @endif
 
                 @if ($cancelError)
                     <x-ui.alert variant="destructive" class="mt-3">

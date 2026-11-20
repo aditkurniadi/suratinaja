@@ -364,6 +364,18 @@
                                 @endforeach
                             </div>
                         </div>
+                    @elseif ($templateFile && empty($uploadError))
+                        <div class="rounded-lg border border-indigo-500/30 bg-indigo-50/50 dark:bg-indigo-950/20 p-3.5 space-y-2">
+                            <div class="flex items-start gap-2">
+                                <x-lucide-sparkles class="size-4 text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5" />
+                                <div class="space-y-1">
+                                    <p class="text-xs font-semibold text-indigo-700 dark:text-indigo-300">Dokumen Belum Memiliki Variabel</p>
+                                    <p class="text-xs text-foreground leading-relaxed">
+                                        Dokumen Word ini belum memiliki tag variabel seperti <code class="font-mono text-foreground font-medium">${tujuan}</code> atau <code class="font-mono text-foreground font-medium">${tanggal}</code>. Dokumen akan langsung dibuka di <strong>Editor OnlyOffice</strong> setelah disimpan agar Anda dapat menyisipkan variabel dengan 1-klik.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
                     @endif
 
                     <div class="flex items-center justify-between pt-2 border-t border-border">
@@ -377,8 +389,13 @@
                         </button>
                         <div class="flex gap-2">
                             <x-ui.button variant="outline" wire:click="$set('showUploadModal', false)">Batal</x-ui.button>
-                            <x-ui.button type="submit" :disabled="empty($detectedVariables)">
-                                Simpan Template
+                            <x-ui.button type="submit" class="gap-1.5" :disabled="!$templateFile">
+                                @if (empty($detectedVariables) && $templateFile)
+                                    <x-lucide-file-pen-line class="size-4" />
+                                    <span>Unggah &amp; Buka di Editor</span>
+                                @else
+                                    <span>Simpan Template</span>
+                                @endif
                             </x-ui.button>
                         </div>
                     </div>
@@ -423,7 +440,7 @@
 
                     <div class="space-y-2">
                         <x-ui.label>Mulai Dari</x-ui.label>
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
                             <label
                                 @class([
                                     'flex flex-col gap-1 rounded-lg border p-3 cursor-pointer transition-colors',
@@ -433,10 +450,10 @@
                             >
                                 <div class="flex items-center gap-2">
                                     <input type="radio" wire:model.live="newStarterMode" value="starter" class="text-primary focus:ring-primary" />
-                                    <span class="font-semibold text-foreground">Kerangka Surat Standar</span>
+                                    <span class="font-semibold text-foreground">Kerangka Standar</span>
                                 </div>
                                 <p class="text-[11px] text-muted-foreground pl-5">
-                                    Sudah dilengkapi format surat resmi (Nomor, Lampiran, Perihal, Jadwal, &amp; <code class="font-mono">${signature_block}</code>) Times New Roman 12pt.
+                                    Format surat resmi lengkap Times New Roman 12pt.
                                 </p>
                             </label>
 
@@ -452,11 +469,45 @@
                                     <span class="font-semibold text-foreground">Dokumen Kosong A4</span>
                                 </div>
                                 <p class="text-[11px] text-muted-foreground pl-5">
-                                    Halaman kosong A4 Times New Roman 12pt. Bebas ketik dan sisipkan variabel dari awal.
+                                    Halaman kosong A4. Desain bebas dari nol di editor.
+                                </p>
+                            </label>
+
+                            <label
+                                @class([
+                                    'flex flex-col gap-1 rounded-lg border p-3 cursor-pointer transition-colors',
+                                    'border-primary bg-primary/5 ring-1 ring-primary' => $newStarterMode === 'upload',
+                                    'border-border hover:bg-muted/40' => $newStarterMode !== 'upload',
+                                ])
+                            >
+                                <div class="flex items-center gap-2">
+                                    <input type="radio" wire:model.live="newStarterMode" value="upload" class="text-primary focus:ring-primary" />
+                                    <span class="font-semibold text-foreground">Unggah Word Saya</span>
+                                </div>
+                                <p class="text-[11px] text-muted-foreground pl-5">
+                                    Pilih file .docx Anda, langsung dibuka di OnlyOffice.
                                 </p>
                             </label>
                         </div>
                     </div>
+
+                    @if ($newStarterMode === 'upload')
+                        <div>
+                            <x-ui.label for="newTemplateFile">Pilih Berkas Word (.docx) <span class="text-destructive">*</span></x-ui.label>
+                            <x-ui.input
+                                id="newTemplateFile"
+                                type="file"
+                                wire:model="newTemplateFile"
+                                accept=".docx"
+                                class="mt-1.5"
+                                required
+                            />
+                            <p class="mt-1 text-[11px] text-muted-foreground">
+                                Dokumen Word akan diunggah dan langsung dibuka di OnlyOffice untuk penambahan variabel.
+                            </p>
+                            <x-ui.form-error for="newTemplateFile" />
+                        </div>
+                    @endif
 
                     <div class="space-y-2">
                         <x-ui.label>Mode Kop Surat</x-ui.label>

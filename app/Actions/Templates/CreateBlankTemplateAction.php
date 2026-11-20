@@ -59,7 +59,7 @@ class CreateBlankTemplateAction
         }
 
         try {
-            $schema = $this->parser->parse($absolutePath);
+            $schema = $this->parser->parse($absolutePath, allowEmpty: true);
         } catch (DomainException) {
             // Blank A4 document intentionally starts with zero variables until user inserts them in OnlyOffice
             $schema = [];

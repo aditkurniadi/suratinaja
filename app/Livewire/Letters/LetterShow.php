@@ -3,6 +3,7 @@
 namespace App\Livewire\Letters;
 
 use App\Actions\Letters\CancelLetterAction;
+use App\Actions\Letters\DeleteLetterAction;
 use App\Actions\Letters\DuplicateLetterAction;
 use App\Actions\Letters\ReviseLetterAction;
 use App\Actions\Letters\TransitionLetterStatusAction;
@@ -43,6 +44,10 @@ class LetterShow extends Component
     public string $cancelReason = '';
 
     public ?string $cancelError = null;
+
+    public bool $showDeleteModal = false;
+
+    public ?string $deleteError = null;
 
     public bool $showEnvelopeModal = false;
 
@@ -134,6 +139,36 @@ class LetterShow extends Component
         } catch (DomainException $e) {
             $this->cancelError = $e->getMessage();
         }
+    }
+
+    public function confirmDelete(DeleteLetterAction $action): void
+    {
+        $this->deleteError = null;
+
+        try {
+            $formattedNumber = $this->letter->formatted_number;
+            $action->execute($this->letter, auth()->user());
+
+            $this->dispatch('toast', [
+                'type' => 'success',
+                'title' => 'Draf surat berhasil dihapus',
+                'description' => $formattedNumber ? "Nomor surat {$formattedNumber} dilepaskan dan tidak hangus." : 'Draf surat berhasil dihapus.',
+            ]);
+
+            $this->redirect(route('letters.index'), navigate: false);
+        } catch (DomainException $e) {
+            $this->deleteError = $e->getMessage();
+        }
+    }
+
+    public function getCanDeleteProperty(): bool
+    {
+        $user = auth()->user();
+        $workspace = app(CurrentWorkspace::class)->get();
+        $role = $workspace ? $workspace->roleOf($user) : null;
+        $hasPerm = $user?->is_super_admin || $user?->can('surat_keluar.delete') || ($role?->canWrite() ?? false);
+
+        return $hasPerm && $this->letter->signed_at === null && $this->letter->status !== \App\Enums\LetterStatus::Selesai;
     }
 
     public function duplicate(DuplicateLetterAction $action): void

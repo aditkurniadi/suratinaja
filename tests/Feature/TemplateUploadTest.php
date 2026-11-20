@@ -7,6 +7,7 @@ use App\Actions\Templates\UploadTemplateAction;
 use App\Enums\TemplateScope;
 use App\Enums\WorkspaceRole;
 use App\Exceptions\DomainException;
+use App\Livewire\Templates\TemplatesIndex;
 use App\Models\LetterTemplate;
 use App\Models\User;
 use App\Models\Workspace;
@@ -15,6 +16,7 @@ use App\Services\Templates\SampleDocxBuilder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
+use Livewire\Livewire;
 use PhpOffice\PhpWord\IOFactory;
 use PhpOffice\PhpWord\PhpWord;
 use Tests\TestCase;
@@ -484,6 +486,110 @@ class TemplateUploadTest extends TestCase
 
         $preview = $previewService->ensurePreviewPdf($letter);
         $this->assertTrue($preview['ok']);
+
+        @unlink($tmpDocx);
+    }
+
+    public function test_docx_without_variables_can_be_uploaded_when_allow_empty_variables_is_true(): void
+    {
+        $ws = Workspace::create(['name' => 'HIMATRIS', 'number_code' => 'HIMATRIS']);
+        $sec = User::factory()->create(['current_workspace_id' => $ws->id]);
+        WorkspaceMember::create([
+            'workspace_id' => $ws->id,
+            'user_id' => $sec->id,
+            'role' => WorkspaceRole::Secretary,
+        ]);
+
+        $tmpDocx = tempnam(sys_get_temp_dir(), 'empty_allowed_').'.docx';
+        $phpWord = new PhpWord;
+        $section = $phpWord->addSection();
+        $section->addText('Dokumen Word tanpa variabel sama sekali.');
+        IOFactory::createWriter($phpWord, 'Word2007')->save($tmpDocx);
+
+        $uploaded = new UploadedFile($tmpDocx, 'tanpa_variabel.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', null, true);
+
+        $template = app(UploadTemplateAction::class)->execute(
+            $uploaded,
+            'Template Word Polos',
+            $sec,
+            $ws,
+            allowEmptyVariables: true
+        );
+
+        $this->assertInstanceOf(LetterTemplate::class, $template);
+        $this->assertSame([], $template->variables_schema);
+        $this->assertSame('Template Word Polos', $template->name);
+
+        @unlink($tmpDocx);
+    }
+
+    public function test_livewire_upload_empty_variables_redirects_to_editor(): void
+    {
+        $ws = Workspace::create(['name' => 'HIMATRIS', 'number_code' => 'HIMATRIS']);
+        $sec = User::factory()->create(['current_workspace_id' => $ws->id]);
+        WorkspaceMember::create([
+            'workspace_id' => $ws->id,
+            'user_id' => $sec->id,
+            'role' => WorkspaceRole::Secretary,
+        ]);
+        app(\App\Support\CurrentWorkspace::class)->set($ws);
+
+        $tmpDocx = tempnam(sys_get_temp_dir(), 'lw_empty_').'.docx';
+        $phpWord = new PhpWord;
+        $section = $phpWord->addSection();
+        $section->addText('Dokumen Word polos untuk pengujian Livewire upload.');
+        IOFactory::createWriter($phpWord, 'Word2007')->save($tmpDocx);
+
+        $uploaded = UploadedFile::fake()->createWithContent('surat_polos.docx', (string) file_get_contents($tmpDocx));
+
+        $component = Livewire::actingAs($sec)
+            ->test(TemplatesIndex::class)
+            ->set('templateFile', $uploaded)
+            ->assertSet('uploadError', null)
+            ->assertSet('detectedVariables', [])
+            ->set('templateName', 'Template Polos Livewire')
+            ->call('saveTemplate');
+
+        $created = LetterTemplate::where('name', 'Template Polos Livewire')->first();
+        $this->assertNotNull($created);
+        $this->assertSame([], $created->variables_schema);
+
+        $component->assertRedirect(route('templates.edit', $created->id));
+
+        @unlink($tmpDocx);
+    }
+
+    public function test_create_template_modal_with_uploaded_docx_redirects_to_editor(): void
+    {
+        $ws = Workspace::create(['name' => 'HIMATRIS', 'number_code' => 'HIMATRIS']);
+        $sec = User::factory()->create(['current_workspace_id' => $ws->id]);
+        WorkspaceMember::create([
+            'workspace_id' => $ws->id,
+            'user_id' => $sec->id,
+            'role' => WorkspaceRole::Secretary,
+        ]);
+        app(\App\Support\CurrentWorkspace::class)->set($ws);
+
+        $tmpDocx = tempnam(sys_get_temp_dir(), 'modal_upload_').'.docx';
+        $phpWord = new PhpWord;
+        $section = $phpWord->addSection();
+        $section->addText('Dokumen dari modal buat template baru.');
+        IOFactory::createWriter($phpWord, 'Word2007')->save($tmpDocx);
+
+        $uploaded = UploadedFile::fake()->createWithContent('modal_doc.docx', (string) file_get_contents($tmpDocx));
+
+        $component = Livewire::actingAs($sec)
+            ->test(TemplatesIndex::class)
+            ->set('newStarterMode', 'upload')
+            ->set('newTemplateName', 'Template Dari Modal')
+            ->set('newTemplateFile', $uploaded)
+            ->call('createInOnlyOffice');
+
+        $created = LetterTemplate::where('name', 'Template Dari Modal')->first();
+        $this->assertNotNull($created);
+        $this->assertSame([], $created->variables_schema);
+
+        $component->assertRedirect(route('templates.edit', $created->id));
 
         @unlink($tmpDocx);
     }
