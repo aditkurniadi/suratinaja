@@ -30,6 +30,14 @@ class Register extends Component
 
     public string $workspace_code = '';
 
+    public function mount(): void
+    {
+        if (! config('suratinaja.allow_public_registration')) {
+            session()->flash('info', 'Pendaftaran publik sedang ditutup. Akses akun hanya melalui undangan atau dibuatkan oleh Super Admin.');
+            $this->redirect(route('login'), navigate: false);
+        }
+    }
+
     public function register(): void
     {
         $validated = $this->validate([

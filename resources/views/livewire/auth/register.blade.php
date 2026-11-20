@@ -20,12 +20,12 @@
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
                 <x-ui.label for="password">Kata Sandi</x-ui.label>
-                <x-ui.input id="password" type="password" wire:model="password" class="mt-1" required />
+                <x-ui.password-input id="password" wire:model="password" class="mt-1" required placeholder="Minimal 8 karakter" />
                 <x-ui.form-error for="password" />
             </div>
             <div>
                 <x-ui.label for="password_confirmation">Konfirmasi Sandi</x-ui.label>
-                <x-ui.input id="password_confirmation" type="password" wire:model="password_confirmation" class="mt-1" required />
+                <x-ui.password-input id="password_confirmation" wire:model="password_confirmation" class="mt-1" required placeholder="Ulangi kata sandi" />
             </div>
         </div>
 

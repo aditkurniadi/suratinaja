@@ -2,6 +2,7 @@
 
 namespace App\Livewire\Auth;
 
+use App\Models\User;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
@@ -35,6 +36,14 @@ class Login extends Component
             ]);
         }
 
+        $user = User::where('email', $this->email)->first();
+        if ($user && $user->isSuspended()) {
+            RateLimiter::hit($throttleKey);
+            throw ValidationException::withMessages([
+                'email' => 'Akun Anda sedang dinonaktifkan (suspended). Silakan hubungi administrator.',
+            ]);
+        }
+
         if (! Auth::attempt(['email' => $this->email, 'password' => $this->password], $this->remember)) {
             RateLimiter::hit($throttleKey);
             throw ValidationException::withMessages([
@@ -46,6 +55,33 @@ class Login extends Component
         session()->regenerate();
 
         $this->redirectIntended(default: route('dashboard'), navigate: false);
+    }
+
+    public function loginDemo(): void
+    {
+        if (! config('suratinaja.demo.enabled')) {
+            abort(404);
+        }
+
+        $demoEmail = config('suratinaja.demo.email');
+        $demoUser = User::where('email', $demoEmail)->where('is_demo', true)->first();
+
+        if (! $demoUser) {
+            throw ValidationException::withMessages([
+                'email' => 'Akun demo belum diinisialisasi. Silakan hubungi administrator.',
+            ]);
+        }
+
+        if ($demoUser->isSuspended()) {
+            throw ValidationException::withMessages([
+                'email' => 'Akun demo sedang dinonaktifkan.',
+            ]);
+        }
+
+        Auth::login($demoUser);
+        session()->regenerate();
+
+        $this->redirect(route('dashboard'), navigate: false);
     }
 
     public function render()

@@ -21,4 +21,9 @@ class WorkspacePolicy
     {
         return $workspace->roleOf($user)?->canWrite() === true;
     }
+
+    public function delete(User $user, Workspace $workspace): bool
+    {
+        return (bool) $user->is_super_admin || $workspace->roleOf($user)?->isAdmin() === true;
+    }
 }

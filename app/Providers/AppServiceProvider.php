@@ -40,5 +40,25 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(LetterTemplate::class, LetterTemplatePolicy::class);
         Gate::policy(\App\Models\SuratMasuk::class, \App\Policies\SuratMasukPolicy::class);
         Gate::policy(\App\Models\Disposisi::class, \App\Policies\DisposisiPolicy::class);
+
+        // DemoGuard: Prevent database writes/deletes for demo users
+        $guardedModels = [
+            \App\Models\Letter::class,
+            \App\Models\LetterRevision::class,
+            \App\Models\LetterActivity::class,
+            \App\Models\SuratMasuk::class,
+            \App\Models\Disposisi::class,
+            \App\Models\LetterTemplate::class,
+            \App\Models\EnvelopeTemplate::class,
+            \App\Models\Workspace::class,
+            \App\Models\WorkspaceMember::class,
+            \App\Models\WorkspaceInvitation::class,
+            \App\Models\BulkJob::class,
+            \App\Models\User::class,
+        ];
+
+        foreach ($guardedModels as $modelClass) {
+            $modelClass::observe(\App\Observers\DemoGuardObserver::class);
+        }
     }
 }

@@ -123,9 +123,8 @@
 
                     <div>
                         <x-ui.label for="user-password">Kata Sandi Baru</x-ui.label>
-                        <x-ui.input
+                        <x-ui.password-input
                             id="user-password"
-                            type="password"
                             wire:model="password"
                             placeholder="Minimal 8 karakter"
                             class="mt-1"
@@ -136,9 +135,8 @@
 
                     <div>
                         <x-ui.label for="user-password-confirmation">Konfirmasi Kata Sandi</x-ui.label>
-                        <x-ui.input
+                        <x-ui.password-input
                             id="user-password-confirmation"
-                            type="password"
                             wire:model="password_confirmation"
                             placeholder="Ulangi kata sandi"
                             class="mt-1"
