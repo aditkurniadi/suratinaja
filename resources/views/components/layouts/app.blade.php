@@ -1,6 +1,7 @@
 @props([
     'title' => 'Dashboard',
     'breadcrumbs' => [],
+    'fullWidth' => false,
 ])
 
 @php
@@ -246,7 +247,11 @@
                 </div>
             </header>
 
-            <main class="mx-auto w-full max-w-[87.5rem] flex-1 px-4 md:px-8 py-6">
+            <main @class([
+                'w-full flex-1',
+                'mx-auto max-w-[87.5rem] px-4 md:px-8 py-6' => ! $fullWidth,
+                'px-2 sm:px-3 py-2 flex flex-col min-h-0' => $fullWidth,
+            ])>
                 @if (session('status'))
                     <x-ui.alert class="mb-4">
                         {{ session('status') }}
@@ -260,5 +265,6 @@
 
     <x-ui.toaster />
     @livewireScripts(['navigate' => false])
+    @stack('scripts')
 </body>
 </html>

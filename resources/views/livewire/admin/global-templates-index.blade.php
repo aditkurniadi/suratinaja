@@ -27,7 +27,13 @@
                         <x-ui.label for="global-file">File .docx</x-ui.label>
                         <x-ui.input id="global-file" type="file" wire:model="file" accept=".docx" class="mt-1.5" required />
                     </div>
-                    <x-ui.button type="submit" class="w-full">Terbitkan Template Global</x-ui.button>
+                    <div class="flex flex-col sm:flex-row gap-2">
+                        <x-ui.button type="submit" class="flex-1">Terbitkan dari File .docx</x-ui.button>
+                        <x-ui.button type="button" variant="outline" wire:click="createGlobalInOnlyOffice" class="gap-1.5">
+                            <x-lucide-file-pen-line class="size-4" />
+                            <span>Buat di OnlyOffice</span>
+                        </x-ui.button>
+                    </div>
                 </form>
             </x-ui.card-content>
         </x-ui.card>
@@ -35,7 +41,7 @@
         <x-ui.card class="lg:col-span-7">
             <x-ui.card-header class="border-b border-border pb-4">
                 <x-ui.card-title>Daftar Master Template Global</x-ui.card-title>
-                <x-ui.card-description>Kelola versi dan status aktif/deprecated.</x-ui.card-description>
+                <x-ui.card-description>Kelola versi, edit di OnlyOffice, dan status aktif/deprecated.</x-ui.card-description>
             </x-ui.card-header>
             <x-ui.card-content class="pt-4">
                 <div class="overflow-x-auto">
@@ -58,7 +64,11 @@
                                             {{ $tpl->is_deprecated ? 'Deprecated' : 'Aktif' }}
                                         </x-ui.badge>
                                     </td>
-                                    <td class="py-2.5 px-3 text-right space-x-1">
+                                    <td class="py-2.5 px-3 text-right space-x-1 whitespace-nowrap">
+                                        <x-ui.button variant="outline" size="sm" :href="route('templates.edit', $tpl->id)" class="gap-1">
+                                            <x-lucide-file-pen-line class="size-3.5 text-blue-600 dark:text-blue-400" />
+                                            <span>Edit di OnlyOffice</span>
+                                        </x-ui.button>
                                         <x-ui.button variant="outline" size="sm" wire:click="$set('versionTargetId', {{ $tpl->id }})">
                                             Versi Baru
                                         </x-ui.button>

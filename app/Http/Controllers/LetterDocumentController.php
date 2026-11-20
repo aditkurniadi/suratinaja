@@ -2,10 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\LetterStatus;
 use App\Models\BulkJob;
 use App\Models\Letter;
 use App\Models\LetterTemplate;
 use App\Services\Documents\DocxRenderer;
+use App\Services\Documents\OnlyOfficeService;
 use App\Services\Documents\PdfPreviewService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -17,11 +19,39 @@ use Throwable;
 
 class LetterDocumentController extends Controller
 {
-    public function downloadLetter(Request $request, int $letterId, DocxRenderer $renderer): Response
-    {
+    public function downloadLetter(
+        Request $request,
+        int $letterId,
+        DocxRenderer $renderer,
+        OnlyOfficeService $onlyOfficeService,
+        PdfPreviewService $pdfService
+    ): Response {
         $letter = Letter::withoutGlobalScopes()->with('workspace')->findOrFail($letterId);
         if (! $letter->workspace || ! $letter->workspace->hasMember($request->user())) {
             abort(403);
+        }
+
+        // If letter is currently in an editable status and OnlyOffice is configured, forcesave & sync first
+        if (in_array($letter->status, [LetterStatus::Draft, LetterStatus::MenungguTtd], true) && ! $letter->is_manual_number) {
+            $onlyOfficeService->forceSaveAndSync($letter);
+            $letter->refresh();
+        }
+
+        $noCacheHeaders = [
+            'Cache-Control' => 'no-store, no-cache, must-revalidate, post-check=0, pre-check=0, max-age=0',
+            'Pragma' => 'no-cache',
+            'Expires' => '0',
+        ];
+
+        // If explicitly requesting PDF format
+        if ($request->query('format') === 'pdf') {
+            $result = $pdfService->ensurePreviewPdf($letter);
+            if ($result['ok']) {
+                $filename = Str::slug(($letter->formatted_number ?: "surat-{$letter->id}").'-'.$letter->perihal).'.pdf';
+                return Storage::disk('local')->download($result['path'], $filename, array_merge([
+                    'Content-Type' => 'application/pdf',
+                ], $noCacheHeaders));
+            }
         }
 
         if (! $letter->generated_file_path || ! Storage::disk('local')->exists($letter->generated_file_path)) {
@@ -31,7 +61,7 @@ class LetterDocumentController extends Controller
 
         $filename = Str::slug(($letter->formatted_number ?: "surat-{$letter->id}").'-'.$letter->perihal).'.docx';
 
-        return Storage::disk('local')->download($letter->generated_file_path, $filename);
+        return Storage::disk('local')->download($letter->generated_file_path, $filename, $noCacheHeaders);
     }
 
     public function downloadBulk(Request $request, string $bulkJobId): Response
@@ -66,14 +96,25 @@ class LetterDocumentController extends Controller
         return Storage::disk('local')->download($template->file_path, Str::slug($template->name).'.docx');
     }
 
-    public function previewPdf(Request $request, int $letterId, PdfPreviewService $pdfService): Response
-    {
+    public function previewPdf(
+        Request $request,
+        int $letterId,
+        PdfPreviewService $pdfService,
+        OnlyOfficeService $onlyOfficeService
+    ): Response {
         $letter = Letter::withoutGlobalScopes()->with('workspace')->findOrFail($letterId);
         if (! $letter->workspace || ! $letter->workspace->hasMember($request->user())) {
             abort(403);
         }
 
-        $result = $pdfService->ensurePreviewPdf($letter);
+        // If sync is requested or letter is currently in an editable status and OnlyOffice is configured
+        $needsSync = $request->boolean('sync') || (in_array($letter->status, [LetterStatus::Draft, LetterStatus::MenungguTtd], true) && ! $letter->is_manual_number);
+        if ($needsSync) {
+            $onlyOfficeService->forceSaveAndSync($letter);
+            $letter->refresh();
+        }
+
+        $result = $pdfService->ensurePreviewPdf($letter, force: $needsSync);
         if (! $result['ok']) {
             return $this->renderHtmlPreviewFallback($letter, $result['message'] ?? null);
         }
@@ -81,16 +122,22 @@ class LetterDocumentController extends Controller
         $absPath = Storage::disk('local')->path($result['path']);
         $filename = Str::slug(($letter->formatted_number ?: "surat-{$letter->id}").'-'.$letter->perihal).'.pdf';
 
+        $noCacheHeaders = [
+            'Cache-Control' => 'no-store, no-cache, must-revalidate, post-check=0, pre-check=0, max-age=0',
+            'Pragma' => 'no-cache',
+            'Expires' => '0',
+        ];
+
         if ($request->boolean('download')) {
-            return Storage::disk('local')->download($result['path'], $filename, [
+            return Storage::disk('local')->download($result['path'], $filename, array_merge([
                 'Content-Type' => 'application/pdf',
-            ]);
+            ], $noCacheHeaders));
         }
 
-        return response()->file($absPath, [
+        return response()->file($absPath, array_merge([
             'Content-Type' => 'application/pdf',
             'Content-Disposition' => 'inline; filename="'.$filename.'"',
-        ]);
+        ], $noCacheHeaders));
     }
 
     private function renderHtmlPreviewFallback(Letter $letter, ?string $fallbackReason = null): Response

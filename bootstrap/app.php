@@ -15,6 +15,9 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware) {
         $middleware->trustProxies(at: '*');
+        $middleware->validateCsrfTokens(except: [
+            'api/onlyoffice/*',
+        ]);
         $middleware->alias([
             'workspace.active' => EnsureActiveWorkspace::class,
             'workspace.member' => EnsureWorkspaceMember::class,

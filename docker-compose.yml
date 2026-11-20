@@ -27,13 +27,15 @@ services:
       SESSION_DRIVER: database
       CACHE_STORE: database
       GOTENBERG_URL: "http://gotenberg:3000"
+      ONLYOFFICE_URL: "${ONLYOFFICE_URL:-http://127.0.0.1:8082}"
+      ONLYOFFICE_INTERNAL_URL: "${ONLYOFFICE_INTERNAL_URL:-http://onlyoffice:80}"
+      ONLYOFFICE_JWT_SECRET: "${ONLYOFFICE_JWT_SECRET:-suratinaja-onlyoffice-secret-key-12345}"
       SUPERADMIN_EMAIL: "${SUPERADMIN_EMAIL:-admin@organisasi.id}"
       SUPERADMIN_PASSWORD: "${SUPERADMIN_PASSWORD:-PasswordKuat123!}"
       AUTORUN_LARAVEL_MIGRATION: "false"
     volumes:
       - suratinaja-storage:/var/www/html/storage
     networks:
-      - dokploy-network
       - default
     depends_on:
       gotenberg:
@@ -100,9 +102,29 @@ services:
     networks:
       - default
 
+  onlyoffice:
+    image: onlyoffice/documentserver:latest
+    container_name: suratinaja-onlyoffice
+    restart: unless-stopped
+    mem_limit: 2048m
+    environment:
+      - JWT_ENABLED=true
+      - JWT_SECRET=${ONLYOFFICE_JWT_SECRET:-suratinaja-onlyoffice-secret-key-12345}
+      - JWT_HEADER=Authorization
+      - USE_UNAUTHORIZED_STORAGE=true
+      - NODE_TLS_REJECT_UNAUTHORIZED=0
+    volumes:
+      - onlyoffice-data:/var/www/onlyoffice/Data
+      - onlyoffice-log:/var/log/onlyoffice
+    ports:
+      - "${ONLYOFFICE_PORT:-8082}:80"
+    extra_hosts:
+      - "suratinaja.test:host-gateway"
+      - "office-suratinaja.test:host-gateway"
+    networks:
+      - default
+
 volumes:
   suratinaja-storage:
-
-networks:
-  dokploy-network:
-    external: true
+  onlyoffice-data:
+  onlyoffice-log:

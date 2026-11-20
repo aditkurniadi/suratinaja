@@ -14,6 +14,7 @@ use App\Livewire\Letters\LettersIndex;
 use App\Livewire\Settings\KopBuilder;
 use App\Livewire\Settings\MembersIndex;
 use App\Livewire\Settings\NumberingSettings;
+use App\Livewire\Templates\TemplateEditor;
 use App\Livewire\Templates\TemplatesIndex;
 use App\Livewire\Workspaces\AcceptInvitation;
 use App\Livewire\Workspaces\Onboarding;
@@ -59,6 +60,7 @@ Route::middleware(['auth', 'workspace.active'])->group(function () {
     Route::get('/bulk/{bulkJob}/download', [LetterDocumentController::class, 'downloadBulk'])->name('bulk.download');
 
     Route::get('/templates', TemplatesIndex::class)->name('templates.index');
+    Route::get('/templates/{template}/edit', TemplateEditor::class)->name('templates.edit');
     Route::get('/templates/{template}/download', [LetterDocumentController::class, 'downloadTemplate'])->name('templates.download');
 
     Route::get('/settings/kop', KopBuilder::class)->name('settings.kop');
@@ -96,3 +98,25 @@ Route::prefix('api/v1')
         Route::get('/jobs/{bulkJob}', [BulkLetterController::class, 'showJob'])
             ->name('api.v1.jobs.show');
     });
+
+/*
+|--------------------------------------------------------------------------
+| OnlyOffice Document Server Endpoints
+|--------------------------------------------------------------------------
+*/
+Route::get('/api/onlyoffice/download/{letter}', [\App\Http\Controllers\Api\OnlyOfficeController::class, 'download'])
+    ->name('onlyoffice.download');
+Route::match(['get', 'post'], '/api/onlyoffice/callback/{letter}', [\App\Http\Controllers\Api\OnlyOfficeController::class, 'callback'])
+    ->name('onlyoffice.callback');
+
+Route::get('/api/onlyoffice/templates/download/{templateId}', [\App\Http\Controllers\Api\OnlyOfficeController::class, 'downloadTemplate'])
+    ->name('onlyoffice.templates.download');
+Route::match(['get', 'post'], '/api/onlyoffice/templates/callback/{templateId}', [\App\Http\Controllers\Api\OnlyOfficeController::class, 'callbackTemplate'])
+    ->name('onlyoffice.templates.callback');
+
+Route::get('/api/onlyoffice/plugins/suratinaja-variables/config.json', [\App\Http\Controllers\Api\OnlyOfficeController::class, 'pluginConfig'])
+    ->name('onlyoffice.plugins.variables.config');
+Route::get('/api/onlyoffice/plugins/suratinaja-variables/index.html', [\App\Http\Controllers\Api\OnlyOfficeController::class, 'pluginIndex'])
+    ->name('onlyoffice.plugins.variables.index');
+Route::get('/api/onlyoffice/plugins/suratinaja-variables/icon.svg', [\App\Http\Controllers\Api\OnlyOfficeController::class, 'pluginIcon'])
+    ->name('onlyoffice.plugins.variables.icon');
