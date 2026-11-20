@@ -104,7 +104,6 @@ services:
 
   onlyoffice:
     image: onlyoffice/documentserver:latest
-    container_name: suratinaja-onlyoffice
     restart: unless-stopped
     mem_limit: 2048m
     expose:

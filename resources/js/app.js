@@ -53,6 +53,26 @@ window.addEventListener('toast', (e) => {
     window.Alpine?.store('toasts')?.push(detail || {});
 });
 
+document.addEventListener('livewire:init', () => {
+    if (window.Livewire?.hook) {
+        window.Livewire.hook('request', ({ fail }) => {
+            fail(({ status, content, preventDefault }) => {
+                try {
+                    const data = typeof content === 'string' ? JSON.parse(content) : content;
+                    if (data?.demo_restricted) {
+                        preventDefault();
+                        window.Alpine?.store('toasts')?.push({
+                            type: 'warning',
+                            title: 'Mode Demo (Hanya Lihat)',
+                            description: data.message || 'Perubahan tidak disimpan dalam akun demo.',
+                        });
+                    }
+                } catch (err) {}
+            });
+        });
+    }
+});
+
 document.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b') {
         e.preventDefault();

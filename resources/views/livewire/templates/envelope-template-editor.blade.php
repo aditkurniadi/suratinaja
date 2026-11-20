@@ -123,7 +123,15 @@
             if (window.DocsAPI && window.DocsAPI.DocEditor) {
                 new DocsAPI.DocEditor("onlyoffice-envelope-editor", config);
             } else {
-                console.warn("OnlyOffice Document Server API not available.");
+                const isLocal = "{{ $docServerUrl }}".includes('127.0.0.1') || "{{ $docServerUrl }}".includes('localhost');
+                const isPublic = window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
+                const container = document.getElementById('onlyoffice-envelope-editor');
+                if (container) {
+                    const msg = (isLocal && isPublic)
+                        ? 'Konfigurasi ONLYOFFICE_URL belum diatur ke domain publik Dokploy (saat ini: {{ $docServerUrl }}). Silakan atur ONLYOFFICE_URL=https://office.domainanda.com pada tab Environment Dokploy dan pastikan domain diarahkan ke service onlyoffice port 80.'
+                        : 'Tidak dapat menghubungi server OnlyOffice di {{ $docServerUrl }}. Pastikan container OnlyOffice Document Server sedang berjalan.';
+                    container.innerHTML = '<div class="p-8 text-center text-xs text-red-500 font-medium">' + msg + '</div>';
+                }
             }
         });
     </script>

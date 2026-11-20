@@ -142,4 +142,15 @@ return [
         'email' => env('SUPERADMIN_EMAIL'),
         'password' => env('SUPERADMIN_PASSWORD'),
     ],
+
+    // Access control: Closed (invite-only) by default
+    'allow_public_registration' => (bool) env('ALLOW_PUBLIC_REGISTRATION', false),
+
+    // Read-only Demo Workspace & Account
+    'demo' => [
+        'enabled' => (bool) env('DEMO_MODE_ENABLED', false),
+        'email' => env('DEMO_USER_EMAIL', 'demo@suratinaja.test'),
+        'password' => env('DEMO_USER_PASSWORD', 'DemoSuratinAja2026!'),
+        'workspace_name' => env('DEMO_WORKSPACE_NAME', 'Himpunan Mahasiswa Demo'),
+    ],
 ];

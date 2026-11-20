@@ -17,6 +17,11 @@ if [ "${AUTORUN_LARAVEL_MIGRATION:-false}" = "true" ] || [ "${CONTAINER_ROLE:-ap
     echo "==> [SuratinAja] Menyinkronkan permission & role Spatie (idempotent)..."
     php /var/www/html/artisan db:seed --class=RoleAndPermissionSeeder --force || true
 
+    if [ "${DEMO_MODE_ENABLED:-false}" = "true" ]; then
+        echo "==> [SuratinAja] Mode Demo aktif: Menjalankan DemoWorkspaceSeeder (idempotent)..."
+        php /var/www/html/artisan db:seed --class=DemoWorkspaceSeeder --force || true
+    fi
+
     echo "==> [SuratinAja] Mereset cache permission Spatie..."
     php /var/www/html/artisan permission:cache-reset || true
 

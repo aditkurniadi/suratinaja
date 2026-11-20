@@ -37,6 +37,9 @@ class OnlyOfficeService
         }
 
         $canEdit = ($letter->status === LetterStatus::Draft || $letter->status === LetterStatus::MenungguTtd);
+        if ($user?->is_demo) {
+            $canEdit = false;
+        }
 
         $downloadToken = $this->generateAccessToken($letter, 'download');
         $callbackToken = $this->generateAccessToken($letter, 'callback');
@@ -550,6 +553,10 @@ class OnlyOfficeService
      */
     public function buildTemplateEditorConfig(LetterTemplate $template, ?User $user = null, bool $canEdit = true): array
     {
+        if ($user?->is_demo) {
+            $canEdit = false;
+        }
+
         if (! $template->file_path || ! Storage::disk('local')->exists($template->file_path)) {
             throw DomainException::templateInvalid('File master template .docx tidak ditemukan di storage.');
         }
@@ -905,6 +912,10 @@ class OnlyOfficeService
 
     public function buildEnvelopeEditorConfig(EnvelopeTemplate $template, ?User $user = null, bool $canEdit = true): array
     {
+        if ($user?->is_demo) {
+            $canEdit = false;
+        }
+
         if (! $template->file_path || ! Storage::disk('local')->exists($template->file_path)) {
             throw DomainException::templateInvalid('File master template amplop .docx tidak ditemukan di storage.');
         }
@@ -1045,6 +1056,10 @@ class OnlyOfficeService
 
     public function buildKopMasterEditorConfig(Workspace $workspace, ?User $user = null, bool $canEdit = true): array
     {
+        if ($user?->is_demo) {
+            $canEdit = false;
+        }
+
         if (! $workspace->kop_master_docx_path || ! Storage::disk('local')->exists($workspace->kop_master_docx_path)) {
             throw DomainException::templateInvalid('File master kop surat .docx tidak ditemukan di storage.');
         }

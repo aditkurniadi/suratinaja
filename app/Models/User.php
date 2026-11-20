@@ -22,6 +22,8 @@ class User extends Authenticatable
         'password',
         'current_workspace_id',
         'is_super_admin',
+        'status',
+        'is_demo',
     ];
 
     protected $hidden = [
@@ -35,7 +37,23 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'is_super_admin' => 'boolean',
+            'is_demo' => 'boolean',
         ];
+    }
+
+    public function isActive(): bool
+    {
+        return $this->status === 'active';
+    }
+
+    public function isSuspended(): bool
+    {
+        return $this->status === 'suspended';
+    }
+
+    public function isDemo(): bool
+    {
+        return (bool) $this->is_demo;
     }
 
     public function memberships(): HasMany
@@ -57,6 +75,10 @@ class User extends Authenticatable
     /** Returns the user's active workspace if still a member, otherwise first available workspace. */
     public function activeWorkspace(): ?Workspace
     {
+        if (! $this->exists) {
+            return null;
+        }
+
         if ($this->current_workspace_id) {
             $ws = $this->workspaces()->where('workspaces.id', $this->current_workspace_id)->first();
             if ($ws) {

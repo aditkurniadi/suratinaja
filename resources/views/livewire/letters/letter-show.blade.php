@@ -963,7 +963,14 @@ document.addEventListener('alpine:init', () => {
 
         handleScriptError() {
             this.loading = false;
-            this.error = 'Tidak dapat menghubungi server OnlyOffice di (' + apiUrl + '). Pastikan container OnlyOffice Document Server sedang berjalan.';
+            const isLocalApi = apiUrl.includes('127.0.0.1') || apiUrl.includes('localhost');
+            const isPublicPage = window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1';
+
+            if (isLocalApi && isPublicPage) {
+                this.error = 'Konfigurasi ONLYOFFICE_URL belum diatur ke domain publik Dokploy (saat ini: ' + apiUrl + '). Silakan atur ONLYOFFICE_URL=https://office.domainanda.com di Environment Dokploy dan pastikan domain diarahkan ke service onlyoffice port 80.';
+            } else {
+                this.error = 'Tidak dapat menghubungi server OnlyOffice di (' + apiUrl + '). Pastikan container OnlyOffice Document Server sedang berjalan dan domain dapat diakses.';
+            }
         },
 
         mountEditor() {

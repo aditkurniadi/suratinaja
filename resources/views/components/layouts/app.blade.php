@@ -33,12 +33,20 @@
             'label' => 'Dokumen & Template',
             'items' => array_values(array_filter([
                 ['label' => 'Library Template', 'route' => 'templates.index', 'icon' => 'file-code-2', 'show' => $user?->can('template.view') ?? true],
+            ], fn ($i) => $i['show'])),
+        ],
+        [
+            'label' => 'Sistem & Super Admin',
+            'items' => array_values(array_filter([
+                ['label' => 'Panel Super Admin', 'route' => 'superadmin.index', 'icon' => 'shield-check', 'show' => (bool) $user?->is_super_admin],
+                ['label' => 'Semua Workspace', 'route' => 'admin.workspaces.index', 'icon' => 'building-2', 'show' => (bool) $user?->is_super_admin],
                 ['label' => 'Template Global', 'route' => 'admin.global-templates', 'icon' => 'globe', 'show' => (bool) $user?->is_super_admin],
             ], fn ($i) => $i['show'])),
         ],
         [
             'label' => 'Konfigurasi Workspace',
             'items' => array_values(array_filter([
+                ['label' => 'Pengaturan Workspace', 'route' => 'settings.workspace', 'icon' => 'settings', 'show' => $isAdmin],
                 ['label' => 'Builder Kop Surat', 'route' => 'settings.kop', 'icon' => 'stamp', 'show' => $isAdmin],
                 ['label' => 'Pola Penomoran', 'route' => 'settings.numbering', 'icon' => 'hash', 'show' => $canManageNumbering],
                 ['label' => 'Jenis Surat', 'route' => 'settings.letter-types', 'icon' => 'tag', 'show' => $canManageNumbering],
@@ -185,13 +193,15 @@
                 </nav>
                 <div class="shrink-0 border-t border-sidebar-border p-3 bg-sidebar">
                     <div class="flex items-center gap-2.5">
-                        <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-secondary text-secondary-foreground text-xs font-semibold">
-                            {{ strtoupper(substr($user?->name ?? 'U', 0, 1)) }}
-                        </div>
-                        <div class="min-w-0 flex-1">
-                            <p class="truncate text-xs font-medium text-sidebar-foreground">{{ $user?->name }}</p>
-                            <p class="truncate text-[11px] text-muted-foreground">{{ $user?->email }}</p>
-                        </div>
+                        <a href="{{ route('profile') }}" wire:navigate class="flex items-center gap-2.5 min-w-0 flex-1 hover:opacity-85 transition-opacity cursor-pointer group" title="Buka Profil & Pengaturan Akun">
+                            <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-secondary text-secondary-foreground text-xs font-semibold group-hover:ring-2 group-hover:ring-primary/40 transition-all">
+                                {{ strtoupper(substr($user?->name ?? 'U', 0, 1)) }}
+                            </div>
+                            <div class="min-w-0 flex-1">
+                                <p class="truncate text-xs font-medium text-sidebar-foreground group-hover:text-primary transition-colors">{{ $user?->name }}</p>
+                                <p class="truncate text-[11px] text-muted-foreground">{{ $user?->email }}</p>
+                            </div>
+                        </a>
                         <form method="POST" action="{{ route('logout') }}">
                             @csrf
                             <button
@@ -210,6 +220,12 @@
 
         {{-- Main Inset --}}
         <div class="flex flex-1 flex-col min-w-0">
+            @if ($user?->is_demo)
+                <div class="bg-amber-500/10 border-b border-amber-500/20 px-3 py-1.5 text-center text-xs font-medium text-amber-800 dark:text-amber-300 flex items-center justify-center gap-2 shrink-0">
+                    <x-lucide-alert-triangle class="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                    <span><strong>Mode Demo (Hanya Lihat):</strong> Anda sedang menjelajahi data sampel. Navigasi dan pratinjau aktif, perubahan data tidak disimpan.</span>
+                </div>
+            @endif
             <header class="sticky top-0 z-30 flex h-14 shrink-0 items-center justify-between border-b border-border bg-background/95 px-3 sm:px-4 md:px-6 backdrop-blur">
                 <div class="flex items-center gap-2 sm:gap-2.5 min-w-0 flex-1 mr-2">
                     <button

@@ -82,6 +82,12 @@ class OnlyOfficeController extends Controller
             return response()->json(['error' => 1, 'message' => 'Unauthorized callback'], 403);
         }
 
+        // DemoGuard: Prevent saving changes to demo workspace documents
+        if ($letter->workspace?->slug === 'demo-workspace' || $letter->workspace?->name === 'Himpunan Mahasiswa Demo') {
+            Log::info("OnlyOffice callback for demo letter {$letter->id} ignored safely.");
+            return response()->json(['error' => 0]);
+        }
+
         $result = $this->onlyOfficeService->handleSaveCallback($letter, $body);
 
         return response()->json($result);
@@ -142,6 +148,12 @@ class OnlyOfficeController extends Controller
             Log::warning("Unauthorized OnlyOffice template callback request for template {$template->id}");
 
             return response()->json(['error' => 1, 'message' => 'Unauthorized callback'], 403);
+        }
+
+        // DemoGuard: Prevent saving changes to demo templates
+        if ($template->workspace?->slug === 'demo-workspace' || $template->workspace?->name === 'Himpunan Mahasiswa Demo') {
+            Log::info("OnlyOffice callback for demo template {$template->id} ignored safely.");
+            return response()->json(['error' => 0]);
         }
 
         $result = $this->onlyOfficeService->handleTemplateSaveCallback($template, $body);
@@ -384,6 +396,12 @@ HTML;
             return response()->json(['error' => 1, 'message' => 'Unauthorized callback'], 403);
         }
 
+        // DemoGuard: Prevent saving changes to demo envelope templates
+        if ($template->workspace?->slug === 'demo-workspace' || $template->workspace?->name === 'Himpunan Mahasiswa Demo') {
+            Log::info("OnlyOffice callback for demo envelope template {$template->id} ignored safely.");
+            return response()->json(['error' => 0]);
+        }
+
         $result = $this->onlyOfficeService->handleEnvelopeSaveCallback($template, $body);
 
         return response()->json($result);
@@ -438,6 +456,12 @@ HTML;
             Log::warning("Unauthorized OnlyOffice kop master callback request for workspace {$workspace->id}");
 
             return response()->json(['error' => 1, 'message' => 'Unauthorized callback'], 403);
+        }
+
+        // DemoGuard: Prevent saving changes to demo workspace kop master
+        if ($workspace->slug === 'demo-workspace' || $workspace->name === 'Himpunan Mahasiswa Demo') {
+            Log::info("OnlyOffice callback for demo kop master in workspace {$workspace->id} ignored safely.");
+            return response()->json(['error' => 0]);
         }
 
         $result = $this->onlyOfficeService->handleKopMasterSaveCallback($workspace, $body);

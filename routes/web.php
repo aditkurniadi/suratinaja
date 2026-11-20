@@ -45,6 +45,8 @@ Route::get('/invitations/{token}', AcceptInvitation::class)->name('invitations.a
 
 Route::middleware('auth')->group(function () {
     Route::get('/onboarding', Onboarding::class)->name('workspaces.onboarding');
+    Route::get('/profile', \App\Livewire\Profile\ProfileIndex::class)->name('profile');
+    Route::get('/superadmin', \App\Livewire\Superadmin\SuperadminDashboard::class)->name('superadmin.index')->middleware('is_super_admin');
 });
 
 Route::middleware(['auth', 'workspace.active'])->group(function () {
@@ -79,6 +81,7 @@ Route::middleware(['auth', 'workspace.active'])->group(function () {
     Route::get('/templates/{template}/download', [LetterDocumentController::class, 'downloadTemplate'])->name('templates.download');
 
     Route::get('/settings/kop', KopBuilder::class)->name('settings.kop');
+    Route::get('/settings/workspace', \App\Livewire\Settings\GeneralSettings::class)->name('settings.workspace');
     Route::get('/settings/envelope-templates', \App\Livewire\Settings\EnvelopeTemplatesIndex::class)->name('settings.envelopes');
     Route::get('/settings/envelope-templates/{envelopeTemplate}/edit', \App\Livewire\Templates\EnvelopeTemplateEditor::class)->name('settings.envelopes.edit');
     Route::get('/settings/numbering', NumberingSettings::class)->name('settings.numbering');
@@ -86,6 +89,7 @@ Route::middleware(['auth', 'workspace.active'])->group(function () {
     Route::get('/settings/members', MembersIndex::class)->name('settings.members');
 
     Route::get('/admin/global-templates', GlobalTemplatesIndex::class)->name('admin.global-templates');
+    Route::get('/admin/workspaces', \App\Livewire\Admin\WorkspacesIndex::class)->name('admin.workspaces.index');
 });
 
 /*
