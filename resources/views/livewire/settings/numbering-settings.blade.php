@@ -77,7 +77,7 @@
                     <x-ui.form-error for="numberPattern" />
                 </div>
 
-                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div class="grid grid-cols-1 sm:grid-cols-4 gap-4">
                     <div>
                         <x-ui.label for="numberCode">Kode Organisasi ({kode}) <span class="text-destructive">*</span></x-ui.label>
                         <x-ui.input id="numberCode" wire:model.live="numberCode" class="mt-1.5 font-mono" placeholder="HIMATRIS" />
@@ -118,6 +118,22 @@
                             <option value="4">4 digit (0001)</option>
                         </x-ui.select>
                         <x-ui.form-error for="seqPadding" />
+                    </div>
+
+                    <div>
+                        <x-ui.label for="nextSequence">Nomor Urut Berikutnya <span class="text-destructive">*</span></x-ui.label>
+                        <x-ui.input
+                            id="nextSequence"
+                            type="number"
+                            min="{{ $minAllowedSequence }}"
+                            wire:model.live="nextSequence"
+                            class="mt-1.5 font-mono"
+                            placeholder="1"
+                        />
+                        <p class="text-[10px] text-muted-foreground mt-0.5">
+                            Batas minimum yang diizinkan: <strong class="text-foreground">{{ $minAllowedSequence }}</strong>
+                        </p>
+                        <x-ui.form-error for="nextSequence" />
                     </div>
                 </div>
 
@@ -202,4 +218,65 @@
             </div>
         </x-ui.card-content>
     </x-ui.card>
+
+    {{-- MODAL KONFIRMASI PERUBAHAN NOMOR URUT --}}
+    @if ($showConfirmModal)
+        <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs" role="dialog" aria-modal="true">
+            <div class="w-full max-w-lg rounded-xl border border-border bg-background p-6 shadow-2xl space-y-4">
+                <div class="flex items-center justify-between border-b border-border pb-3">
+                    <div class="flex items-center gap-2">
+                        <x-lucide-alert-triangle class="size-5 text-amber-500" />
+                        <h3 class="text-base font-semibold text-foreground">Konfirmasi Perubahan Nomor Urut</h3>
+                    </div>
+                    <button type="button" wire:click="$set('showConfirmModal', false)" class="text-muted-foreground hover:text-foreground cursor-pointer">
+                        <x-lucide-x class="size-4" />
+                    </button>
+                </div>
+
+                <div class="space-y-3 text-xs">
+                    <p class="text-muted-foreground">
+                        Anda akan mengubah nomor urut surat berikutnya untuk workspace <strong>{{ $workspace->name }}</strong>.
+                    </p>
+
+                    <div class="grid grid-cols-2 gap-3 p-3 rounded-lg border border-border bg-muted/30 font-mono">
+                        <div>
+                            <span class="text-[11px] text-muted-foreground block font-sans">Nomor Urut Semula:</span>
+                            <span class="text-base font-bold text-muted-foreground">{{ $initialNextSequence }}</span>
+                        </div>
+                        <div>
+                            <span class="text-[11px] text-muted-foreground block font-sans">Nomor Urut Baru:</span>
+                            <span class="text-base font-bold text-primary">{{ $nextSequence }}</span>
+                        </div>
+                    </div>
+
+                    <div class="p-3 rounded-lg border border-primary/20 bg-primary/5 space-y-1">
+                        <span class="text-[11px] text-muted-foreground font-semibold">Estimasi Nomor Surat Berikutnya:</span>
+                        <p class="font-mono text-sm font-bold text-primary">
+                            {{ $preview ?: '—' }}
+                        </p>
+                    </div>
+
+                    <div class="p-3 rounded-lg border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-300 space-y-1">
+                        <div class="flex items-center gap-1.5 font-semibold text-xs">
+                            <x-lucide-info class="size-3.5 shrink-0" />
+                            <span>Perhatian</span>
+                        </div>
+                        <p class="text-[11px] leading-relaxed">
+                            Mengubah nomor urut ke angka yang lebih tinggi akan melompati nomor-nomor sebelumnya. Nomor yang terlewati tidak dapat diturunkan kembali ke angka lebih rendah dari nomor surat yang sudah terbit demi mencegah bentrok nomor surat.
+                        </p>
+                    </div>
+                </div>
+
+                <div class="flex justify-end gap-2 pt-3 border-t border-border">
+                    <x-ui.button type="button" variant="outline" wire:click="$set('showConfirmModal', false)">
+                        Batal
+                    </x-ui.button>
+                    <x-ui.button type="button" wire:click="confirmSave" class="bg-primary hover:bg-primary/90 text-primary-foreground gap-1.5">
+                        <x-lucide-check class="size-4" />
+                        <span>Ya, Terapkan Perubahan</span>
+                    </x-ui.button>
+                </div>
+            </div>
+        </div>
+    @endif
 </div>

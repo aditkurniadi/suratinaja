@@ -101,6 +101,25 @@
         </button>
     </div>
 
+    {{-- Banner Balasan Surat Masuk (Jika Ada) --}}
+    @if ($letter->suratMasuk)
+        <div class="w-full shrink-0 mb-2 flex items-center justify-between gap-2 px-3 py-2 rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-50/90 dark:bg-emerald-950/50 text-xs text-emerald-800 dark:text-emerald-200">
+            <div class="flex items-center gap-2 truncate">
+                <x-lucide-reply class="size-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                <span class="font-medium">Surat ini merupakan balasan untuk Surat Masuk:</span>
+                <span class="font-mono font-bold">{{ $letter->suratMasuk->nomor_agenda }}</span>
+                <span class="truncate text-emerald-700 dark:text-emerald-300">({{ $letter->suratMasuk->pengirim }} — {{ $letter->suratMasuk->perihal }})</span>
+            </div>
+            <a
+                href="{{ route('surat-masuk.show', $letter->suratMasuk->id) }}"
+                class="shrink-0 font-semibold underline hover:text-emerald-950 dark:hover:text-emerald-50 flex items-center gap-1"
+            >
+                <span>Buka Surat Masuk</span>
+                <x-lucide-arrow-right class="size-3" />
+            </a>
+        </div>
+    @endif
+
     {{-- Compact Action Toolbar (1 Baris Ringkas & Ramping) --}}
     <header
         x-show="!isToolbarMinimized"
@@ -131,7 +150,7 @@
             </div>
 
             {{-- Sisi Kanan: Tombol-tombol Aksi Modal & Workflow --}}
-            <div class="flex items-center gap-1.5 shrink-0">
+            <div class="flex items-center gap-1.5 shrink-0 flex-wrap">
                 {{-- Tombol Detail Surat --}}
                 <x-ui.button
                     size="sm"
@@ -145,18 +164,39 @@
                     <span class="hidden sm:inline">Detail Surat</span>
                 </x-ui.button>
 
-                {{-- Tombol Pratinjau PDF --}}
-                <x-ui.button
-                    size="sm"
-                    variant="outline"
-                    type="button"
-                    @click="openPdfModal()"
-                    class="gap-1.5 h-8 px-2.5"
-                    title="Buka Pratinjau Dokumen PDF"
-                >
-                    <x-lucide-file-text class="size-3.5 text-emerald-600 dark:text-emerald-400" />
-                    <span class="hidden sm:inline">Pratinjau PDF</span>
-                </x-ui.button>
+                @if ($canEdit)
+                    {{-- Tombol Pratinjau PDF (Hanya di mode edit untuk preview modal) --}}
+                    <x-ui.button
+                        size="sm"
+                        variant="outline"
+                        type="button"
+                        @click="openPdfModal()"
+                        class="gap-1.5 h-8 px-2.5"
+                        title="Buka Pratinjau Dokumen PDF"
+                    >
+                        <x-lucide-file-text class="size-3.5 text-emerald-600 dark:text-emerald-400" />
+                        <span class="hidden sm:inline">Pratinjau PDF</span>
+                    </x-ui.button>
+                @else
+                    {{-- Di mode read-only: Tombol langsung Unduh PDF & Tab Baru --}}
+                    <a
+                        href="{{ route('letters.preview-pdf', ['letter' => $letter->id, 'download' => 1]) }}"
+                        class="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-semibold bg-primary text-primary-foreground hover:bg-primary/90 transition shadow-2xs"
+                        title="Unduh Berkas PDF Resmi"
+                    >
+                        <x-lucide-download class="size-3.5" />
+                        <span>Unduh PDF</span>
+                    </a>
+                    <a
+                        href="{{ route('letters.preview-pdf', $letter->id) }}"
+                        target="_blank"
+                        class="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-medium border border-border bg-background hover:bg-accent text-foreground transition"
+                        title="Buka PDF di Tab Baru"
+                    >
+                        <x-lucide-external-link class="size-3.5 text-blue-600" />
+                        <span class="hidden sm:inline">Tab Baru</span>
+                    </a>
+                @endif
 
                 {{-- Tombol Riwayat & Audit --}}
                 <x-ui.button
@@ -171,19 +211,64 @@
                     <span class="hidden sm:inline">Riwayat &amp; Audit</span>
                 </x-ui.button>
 
-                <div class="h-4 w-px bg-border mx-0.5 hidden sm:block"></div>
+                {{-- Tombol Cetak Amplop --}}
+                <x-ui.button
+                    size="sm"
+                    variant="outline"
+                    type="button"
+                    wire:click="openEnvelopeModal"
+                    class="gap-1.5 h-8 px-2.5 text-indigo-700 dark:text-indigo-400 border-indigo-200 dark:border-indigo-800 hover:bg-indigo-50 dark:hover:bg-indigo-950/50"
+                    title="Pratinjau Kop Amplop (.docx / PDF)"
+                >
+                    <x-lucide-mail class="size-3.5 text-indigo-600 dark:text-indigo-400" />
+                    <span class="hidden sm:inline">Pratinjau Amplop</span>
+                </x-ui.button>
 
-                {{-- Quick Workflow Transition Button --}}
-                @if ($role?->canWrite())
-                    @if ($letter->status === \App\Enums\LetterStatus::Draft)
+                @if ($canEdit && ! $letter->is_manual_number)
+                    {{-- Mode Switcher Pill: Fast Preview vs Word Editor --}}
+                    <div class="inline-flex items-center rounded-lg border border-border bg-muted/40 p-0.5 text-xs">
+                        <button
+                            type="button"
+                            wire:click="$set('activeRightTab', 'preview')"
+                            @class([
+                                'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md font-medium transition cursor-pointer',
+                                'bg-background text-foreground shadow-2xs' => $activeRightTab === 'preview',
+                                'text-muted-foreground hover:text-foreground' => $activeRightTab !== 'preview',
+                            ])
+                            title="Tampilkan Pratinjau Dokumen Cepat"
+                        >
+                            <x-lucide-file-text class="size-3.5" />
+                            <span>Pratinjau</span>
+                        </button>
+                        <button
+                            type="button"
+                            wire:click="$set('activeRightTab', 'editor')"
+                            @class([
+                                'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md font-medium transition cursor-pointer',
+                                'bg-background text-foreground shadow-2xs' => $activeRightTab === 'editor',
+                                'text-muted-foreground hover:text-foreground' => $activeRightTab !== 'editor',
+                            ])
+                            title="Buka Editor Microsoft Word Online (OnlyOffice)"
+                        >
+                            <x-lucide-file-edit class="size-3.5 text-blue-600 dark:text-blue-400" />
+                            <span>Edit Word</span>
+                        </button>
+                    </div>
+                @endif
+
+                @if ($canEdit)
+                    <div class="h-4 w-px bg-border mx-0.5 hidden sm:block"></div>
+
+                    {{-- Quick Workflow Transition Button --}}
+                    @if ($letter->status === \App\Enums\LetterStatus::Draft && ($role?->canWrite() || auth()->user()->can('surat_keluar.edit')))
                         <x-ui.button size="sm" wire:click="transition('menunggu_ttd')" class="h-8 px-2.5 gap-1">
                             <x-lucide-send class="size-3.5" />
                             <span class="hidden sm:inline">Ajukan TTD</span>
                         </x-ui.button>
-                    @elseif ($letter->status === \App\Enums\LetterStatus::MenungguTtd)
+                    @elseif ($letter->status === \App\Enums\LetterStatus::MenungguTtd && ($role?->canWrite() || auth()->user()->can('surat_keluar.acc')))
                         <x-ui.button size="sm" wire:click="transition('selesai')" class="h-8 px-2.5 gap-1 bg-emerald-600 hover:bg-emerald-700 text-white">
                             <x-lucide-check-check class="size-3.5" />
-                            <span class="hidden sm:inline">Tandai Selesai</span>
+                            <span class="hidden sm:inline">ACC / Tandai Selesai</span>
                         </x-ui.button>
                     @endif
                 @endif
@@ -215,6 +300,10 @@
                         @endif
 
                         @if (! $letter->is_manual_number)
+                            <button type="button" wire:click="openEnvelopeModal" @click="isActionDropdownOpen = false" class="w-full text-left flex items-center gap-2 px-2.5 py-1.5 rounded-md hover:bg-accent transition-colors text-indigo-600 dark:text-indigo-400">
+                                <x-lucide-mail class="size-3.5" />
+                                <span>Pratinjau Amplop</span>
+                            </button>
                             <a href="{{ route('letters.download', $letter->id) }}" class="flex items-center gap-2 px-2.5 py-1.5 rounded-md hover:bg-accent transition-colors">
                                 <x-lucide-download class="size-3.5 text-muted-foreground" />
                                 <span>Unduh .docx</span>
@@ -226,7 +315,7 @@
                             <div class="my-1 border-t border-border"></div>
                         @endif
 
-                        @if ($role?->canWrite())
+                        @if ($canEdit)
                             @if ($letter->status !== \App\Enums\LetterStatus::Dibatalkan)
                                 <button type="button" @click="isActionDropdownOpen = false; $wire.set('showReviseModal', true)" class="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md hover:bg-accent text-left transition-colors cursor-pointer">
                                     <x-lucide-git-branch class="size-3.5 text-muted-foreground" />
@@ -239,7 +328,7 @@
                                 <span>Duplikasi Surat</span>
                             </button>
 
-                            @if ($letter->status !== \App\Enums\LetterStatus::Dibatalkan)
+                            @if ($letter->status !== \App\Enums\LetterStatus::Dibatalkan && (auth()->user()->can('surat_keluar.delete') || ($role?->canWrite() ?? false)))
                                 <div class="my-1 border-t border-border"></div>
                                 <button type="button" @click="isActionDropdownOpen = false; $wire.set('showCancelModal', true)" class="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-md hover:bg-destructive/10 text-destructive text-left transition-colors cursor-pointer">
                                     <x-lucide-ban class="size-3.5" />
@@ -250,30 +339,32 @@
                     </div>
                 </div>
 
-                {{-- Refresh Status Button --}}
-                <button
-                    type="button"
-                    wire:click="refreshPreview"
-                    class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-background text-muted-foreground hover:bg-accent hover:text-accent-foreground cursor-pointer"
-                    title="Sinkronkan &amp; Refresh Data"
-                >
-                    <x-lucide-refresh-cw class="size-3.5" />
-                </button>
+                @if ($canEdit)
+                    {{-- Refresh Status Button --}}
+                    <button
+                        type="button"
+                        wire:click="refreshPreview"
+                        class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-background text-muted-foreground hover:bg-accent hover:text-accent-foreground cursor-pointer"
+                        title="Sinkronkan &amp; Refresh Data"
+                    >
+                        <x-lucide-refresh-cw class="size-3.5" />
+                    </button>
 
-                {{-- Minimize Toolbar (Mode Fokus Penuh) --}}
-                <button
-                    type="button"
-                    @click="isToolbarMinimized = true"
-                    class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-background text-muted-foreground hover:bg-accent hover:text-accent-foreground cursor-pointer"
-                    title="Sembunyikan Toolbar (Mode Fokus Penuh)"
-                >
-                    <x-lucide-minimize-2 class="size-3.5" />
-                </button>
+                    {{-- Minimize Toolbar (Mode Fokus Penuh) --}}
+                    <button
+                        type="button"
+                        @click="isToolbarMinimized = true"
+                        class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-background text-muted-foreground hover:bg-accent hover:text-accent-foreground cursor-pointer"
+                        title="Sembunyikan Toolbar (Mode Fokus Penuh)"
+                    >
+                        <x-lucide-minimize-2 class="size-3.5" />
+                    </button>
+                @endif
             </div>
         </div>
     </header>
 
-    {{-- Main Area: OnlyOffice Word Editor Canvas (Definite Viewport Height & Fullscreen Minimize Mode) --}}
+    {{-- Main Area: OnlyOffice Word Editor Canvas vs Direct PDF Canvas (Read-Only) --}}
     <div
         :class="isToolbarMinimized
             ? 'onlyoffice-wrapper-fullscreen bg-white dark:bg-zinc-950 flex flex-col'
@@ -297,12 +388,21 @@
                     </x-ui.button>
                 @endif
             </div>
+        @elseif (! $canEdit || $activeRightTab !== 'editor')
+            {{-- Mode Pratinjau Dokumen Cepat (Instant Fast PDF Preview) --}}
+            <div class="flex-1 w-full min-h-[78vh] flex flex-col bg-muted/10 relative overflow-hidden">
+                <iframe
+                    src="{{ route('letters.preview-pdf', $letter->id) }}?v={{ $letter->updated_at?->timestamp ?? time() }}"
+                    class="w-full h-full min-h-[78vh] border-0"
+                    title="Pratinjau Dokumen Surat"
+                ></iframe>
+            </div>
         @else
             {{-- Container OnlyOffice dengan wire:ignore agar tidak pernah reload saat Livewire berinteraksi --}}
             <div
                 wire:ignore
                 x-data="onlyOfficeDocEditor({
-                    apiUrl: '{{ rtrim(config('suratinaja.onlyoffice.url', 'https://office-suratinaja.test'), '/') }}/web-apps/apps/api/documents/api.js',
+                    apiUrl: '{{ rtrim(config('suratinaja.onlyoffice.url', 'http://127.0.0.1:8082'), '/') }}/web-apps/apps/api/documents/api.js',
                     config: @js($onlyOfficeConfig),
                 })"
                 x-init="initEditor()"
@@ -384,6 +484,21 @@
                     <dd class="font-medium mt-0.5">{{ $letter->signed_at ? $letter->signed_at->format('d M Y H:i') : 'Belum ditandatangani' }}</dd>
                 </div>
             </dl>
+
+            @if ($letter->suratMasuk)
+                <div class="rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-50/70 dark:bg-emerald-950/40 p-3 text-xs space-y-1">
+                    <span class="text-[10px] uppercase font-bold text-emerald-700 dark:text-emerald-400">Balasan Untuk Surat Masuk</span>
+                    <div class="flex items-center justify-between gap-2">
+                        <div class="truncate">
+                            <span class="font-mono font-bold text-foreground">[{{ $letter->suratMasuk->nomor_agenda }}]</span>
+                            <span class="font-medium text-foreground">{{ $letter->suratMasuk->pengirim }}</span> — {{ $letter->suratMasuk->perihal }}
+                        </div>
+                        <a href="{{ route('surat-masuk.show', $letter->suratMasuk->id) }}" class="underline font-semibold text-emerald-700 dark:text-emerald-300 hover:text-emerald-900 shrink-0">
+                            Buka Detail
+                        </a>
+                    </div>
+                </div>
+            @endif
 
             @if ($letter->cancel_reason)
                 <x-ui.alert variant="destructive" title="Alasan Pembatalan">
@@ -699,6 +814,113 @@
                         <x-ui.button variant="destructive" type="submit">Ya, Batalkan Surat</x-ui.button>
                     </div>
                 </form>
+            </div>
+        </div>
+    @endif
+    {{-- MODAL 6: Pratinjau Kop Amplop (Preview-First Zero-Input) --}}
+    @if ($showEnvelopeModal)
+        <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs" role="dialog" aria-modal="true">
+            <div class="w-full max-w-5xl rounded-2xl border border-border bg-background p-5 shadow-2xl flex flex-col h-[88vh]">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between border-b border-border pb-3 shrink-0 gap-3">
+                    <div class="flex items-center gap-2.5">
+                        <div class="p-2 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 rounded-xl">
+                            <x-lucide-mail class="size-5" />
+                        </div>
+                        <div>
+                            <h3 class="text-base font-bold text-foreground flex items-center gap-2">
+                                <span>Pratinjau Kop Amplop</span>
+                                @if ($selectedEnvelopeTemplateId && $envelopeTemplates->find($selectedEnvelopeTemplateId))
+                                    <span class="text-xs px-2 py-0.5 rounded-full font-semibold bg-indigo-100 text-indigo-800 dark:bg-indigo-900/60 dark:text-indigo-300">
+                                        {{ strtoupper($envelopeTemplates->find($selectedEnvelopeTemplateId)->preset_size) }}
+                                    </span>
+                                @endif
+                            </h3>
+                            <p class="text-xs text-muted-foreground">
+                                Data nomor surat &amp; instansi tertuju terisi otomatis dari dokumen surat.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center gap-2 flex-wrap">
+                        {{-- Dropdown Switcher Ukuran Amplop (Jika > 1 template) --}}
+                        @if ($envelopeTemplates->count() > 1)
+                            <div class="flex items-center gap-1.5 mr-2">
+                                <span class="text-xs text-muted-foreground hidden md:inline">Ukuran:</span>
+                                <select
+                                    wire:change="changeEnvelopeTemplate($event.target.value)"
+                                    class="text-xs py-1.5 px-2.5 border border-border rounded-lg bg-background text-foreground focus:ring-1 focus:ring-primary focus:outline-none"
+                                >
+                                    @foreach ($envelopeTemplates as $tmpl)
+                                        <option value="{{ $tmpl->id }}" @selected($selectedEnvelopeTemplateId === $tmpl->id)>
+                                            {{ $tmpl->name }} ({{ strtoupper($tmpl->preset_size) }}) {{ $tmpl->is_default ? '★' : '' }}
+                                        </option>
+                                    @endforeach
+                                </select>
+                            </div>
+                        @endif
+
+                        @if ($selectedEnvelopeTemplateId)
+                            <a
+                                href="{{ route('letters.envelope.download', ['letter' => $letter->id, 'template_id' => $selectedEnvelopeTemplateId, 'format' => 'pdf']) }}"
+                                class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white shadow-2xs transition"
+                            >
+                                <x-lucide-download class="size-3.5" />
+                                <span>Unduh PDF</span>
+                            </a>
+                            <a
+                                href="{{ route('letters.envelope.download', ['letter' => $letter->id, 'template_id' => $selectedEnvelopeTemplateId, 'format' => 'docx']) }}"
+                                class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-border bg-background hover:bg-muted text-muted-foreground transition"
+                            >
+                                <x-lucide-file-text class="size-3.5" />
+                                <span>.docx</span>
+                            </a>
+                            <a
+                                href="{{ route('letters.envelope.preview', ['letter' => $letter->id, 'template_id' => $selectedEnvelopeTemplateId]) }}"
+                                target="_blank"
+                                class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-border bg-background hover:bg-muted text-foreground transition"
+                            >
+                                <x-lucide-external-link class="size-3.5 text-blue-600" />
+                                <span class="hidden sm:inline">Tab Baru</span>
+                            </a>
+                        @endif
+
+                        <button type="button" wire:click="$set('showEnvelopeModal', false)" class="text-muted-foreground hover:text-foreground text-lg ml-1 leading-none cursor-pointer">
+                            &times;
+                        </button>
+                    </div>
+                </div>
+
+                <div class="flex-1 min-h-0 pt-3 relative">
+                    @if ($envelopeTemplates->isEmpty())
+                        <div class="h-full flex flex-col items-center justify-center p-6 text-center space-y-3">
+                            <div class="size-12 rounded-full bg-amber-50 dark:bg-amber-950/40 text-amber-600 flex items-center justify-center">
+                                <x-lucide-mail class="size-6" />
+                            </div>
+                            <div class="max-w-md">
+                                <h4 class="text-sm font-bold text-foreground">Belum Ada Template Amplop</h4>
+                                <p class="text-xs text-muted-foreground mt-1">
+                                    Workspace ini belum memiliki template amplop. Silakan buat starter template (DL, C5, atau A4) di menu Konfigurasi Amplop.
+                                </p>
+                            </div>
+                            <x-ui.button as="a" href="{{ route('settings.envelopes') }}" size="sm" class="gap-1.5">
+                                <span>Kelola Template Amplop</span>
+                                <x-lucide-arrow-right class="size-3.5" />
+                            </x-ui.button>
+                        </div>
+                    @else
+                        {{-- Loading / sync indicator --}}
+                        <div wire:loading wire:target="changeEnvelopeTemplate, openEnvelopeModal" class="absolute inset-0 flex flex-col items-center justify-center bg-background/80 backdrop-blur-xs z-10 space-y-2 rounded-lg">
+                            <div class="size-7 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+                            <p class="text-xs text-muted-foreground font-medium">Memuat pratinjau amplop...</p>
+                        </div>
+
+                        <iframe
+                            src="{{ route('letters.envelope.preview', ['letter' => $letter->id, 'template_id' => $selectedEnvelopeTemplateId]) }}?v={{ $envelopePreviewVersion }}"
+                            class="w-full h-full rounded-xl border border-border bg-muted/20"
+                            title="Pratinjau Kop Amplop"
+                        ></iframe>
+                    @endif
+                </div>
             </div>
         </div>
     @endif

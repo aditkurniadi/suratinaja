@@ -19,9 +19,6 @@ class TransitionLetterStatusAction
     public function execute(Letter $letter, User $actor, string|LetterStatus $target): Letter
     {
         $workspace = $letter->workspace()->withoutGlobalScopes()->firstOrFail();
-        if (! $workspace->roleOf($actor)?->canWrite()) {
-            throw DomainException::workspaceForbidden('Peran Ketua tidak diizinkan mengubah status surat.');
-        }
 
         $targetStatus = $target instanceof LetterStatus
             ? $target
@@ -29,6 +26,19 @@ class TransitionLetterStatusAction
 
         if (! $targetStatus) {
             throw DomainException::invalidTransition('Status tujuan tidak valid.');
+        }
+
+        $canAcc = $actor->can('surat_keluar.acc');
+        $canWrite = $workspace->roleOf($actor)?->canWrite() ?? false;
+
+        if ($targetStatus === LetterStatus::Selesai) {
+            if (! $canAcc && ! $canWrite && ! $actor->is_super_admin) {
+                throw DomainException::workspaceForbidden('Anda tidak memiliki izin menyetujui (ACC) surat.');
+            }
+        } else {
+            if (! $canWrite && ! $actor->can('surat_keluar.edit') && ! $actor->is_super_admin) {
+                throw DomainException::workspaceForbidden('Peran Anda tidak diizinkan mengubah status surat.');
+            }
         }
 
         $currentStatus = $letter->status;

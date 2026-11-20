@@ -133,6 +133,12 @@ class GlobalTemplatesIndex extends Component
 
         return view('livewire.admin.global-templates-index', [
             'templates' => $templates,
+        ])->layout('components.layouts.app', [
+            'title' => 'Template Global',
+            'breadcrumbs' => [
+                ['label' => 'Dokumen & Template'],
+                ['label' => 'Template Global'],
+            ],
         ]);
     }
 }

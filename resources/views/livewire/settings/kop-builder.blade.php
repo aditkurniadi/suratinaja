@@ -9,6 +9,28 @@
         </p>
     </div>
 
+    {{-- Banner / Hubungan ke Template Amplop & Master Kop --}}
+    <div class="bg-gradient-to-r from-indigo-50 to-blue-50 dark:from-indigo-950/40 dark:to-blue-950/40 border border-indigo-200 dark:border-indigo-800 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div class="flex items-center gap-3">
+            <div class="p-2.5 bg-indigo-600 text-white rounded-xl shadow-sm">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                </svg>
+            </div>
+            <div>
+                <h3 class="text-sm font-bold text-slate-900 dark:text-white">Master Template Kop Amplop (.docx)</h3>
+                <p class="text-xs text-slate-600 dark:text-slate-300">
+                    Atur template amplop kustom berukuran DL No. 90, C5, atau A4 dan edit tata letak visualnya langsung di OnlyOffice.
+                </p>
+            </div>
+        </div>
+        <div class="flex items-center gap-2">
+            <a href="{{ route('settings.envelopes') }}" class="inline-flex items-center px-4 py-2 text-xs font-semibold rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm transition">
+                Kelola Template Amplop &rarr;
+            </a>
+        </div>
+    </div>
+
     <form wire:submit="save">
         <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
             {{-- Left Pane (7 cols): Form Sections --}}

@@ -30,6 +30,7 @@ class BulkJob extends Model
         'recipient_count',
         'processed_count',
         'output_path',
+        'output_pdf_path',
         'error',
         'finished_at',
     ];
@@ -70,5 +71,25 @@ class BulkJob extends Model
         }
 
         return (int) min(100, round(($this->processed_count / $this->recipient_count) * 100));
+    }
+
+    public function numberRange(): string
+    {
+        $numbers = $this->letters()
+            ->with('activeNumber')
+            ->get()
+            ->map(fn ($l) => $l->activeNumber?->formatted_number)
+            ->filter()
+            ->values();
+
+        if ($numbers->isEmpty()) {
+            return '—';
+        }
+
+        if ($numbers->count() === 1) {
+            return (string) $numbers->first();
+        }
+
+        return $numbers->first().' – '.$numbers->last();
     }
 }

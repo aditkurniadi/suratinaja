@@ -23,6 +23,9 @@ class LettersIndex extends Component
     #[Url(except: '')]
     public string $search = '';
 
+    #[Url(except: '')]
+    public string $bulk_job_id = '';
+
     public function updatingSearch(): void
     {
         $this->resetPage();
@@ -73,11 +76,15 @@ class LettersIndex extends Component
         $workspace = app(CurrentWorkspace::class)->get();
         $role = $workspace ? $workspace->roleOf(auth()->user()) : null;
 
-        $query = Letter::with(['activeNumber', 'latestNumber', 'template', 'author'])
+        $query = Letter::with(['activeNumber', 'latestNumber', 'template', 'author', 'suratMasuk'])
             ->orderByDesc('id');
 
         if ($this->status !== '') {
             $query->where('status', strtolower($this->status));
+        }
+
+        if ($this->bulk_job_id !== '') {
+            $query->where('bulk_job_id', $this->bulk_job_id);
         }
 
         $search = trim($this->search);
@@ -94,6 +101,11 @@ class LettersIndex extends Component
             'workspace' => $workspace,
             'role' => $role,
             'letters' => $letters,
+        ])->layout('components.layouts.app', [
+            'title' => 'Daftar Surat',
+            'breadcrumbs' => [
+                ['label' => 'Daftar Surat'],
+            ],
         ]);
     }
 }

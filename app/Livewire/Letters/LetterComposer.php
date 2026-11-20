@@ -8,6 +8,7 @@ use App\Enums\LetterStatus;
 use App\Exceptions\DomainException;
 use App\Models\Letter;
 use App\Models\LetterTemplate;
+use App\Models\SuratMasuk;
 use App\Services\Templates\VariableTypeResolver;
 use App\Support\CurrentWorkspace;
 use Livewire\Attributes\Title;
@@ -24,6 +25,12 @@ class LetterComposer extends Component
 
     public ?int $templateId = null;
 
+    public ?int $replyToSuratMasukId = null;
+
+    public string $searchSuratMasuk = '';
+
+    public bool $showSelectSmModal = false;
+
     public string $kategori = 'SU';
 
     public string $customKategori = '';
@@ -39,6 +46,10 @@ class LetterComposer extends Component
     public string $perihal = '';
 
     public string $letterDate = '';
+
+    public string $tanggalKegiatan = '';
+
+    public ?string $calendarContextNote = null;
 
     public string $city = 'Cilacap';
 
@@ -62,8 +73,9 @@ class LetterComposer extends Component
     public function mount(Letter|int|null $letter = null): void
     {
         $ws = app(CurrentWorkspace::class)->get();
-        if (! $ws || ! $ws->roleOf(auth()->user())?->canWrite()) {
-            abort(403, 'Peran Ketua bersifat read-only dan tidak dapat membuat atau mengedit surat.');
+        $user = auth()->user();
+        if (! $ws || (! $user->can('surat_keluar.create') && ! $ws->roleOf($user)?->canWrite())) {
+            abort(403, 'Anda tidak memiliki izin membuat atau mengedit surat keluar.');
         }
 
         if ($letter !== null) {
@@ -75,10 +87,12 @@ class LetterComposer extends Component
             }
             $this->letterId = $existing->id;
             $this->templateId = $existing->template_id;
+            $this->replyToSuratMasukId = $existing->surat_masuk_id;
             $this->letterMode = $existing->is_manual_number || ! $existing->template_id ? 'manual_number' : 'template';
             $this->linkDrive = $existing->link_drive ?? '';
             $this->perihal = $existing->perihal;
             $this->letterDate = $existing->letter_date?->toDateString() ?? now()->toDateString();
+            $this->tanggalKegiatan = $existing->tanggal_kegiatan?->toDateString() ?? '';
             $this->values = $existing->field_values ?? [];
             $this->recipientName = (string) ($this->values['penerima'] ?? '');
             $this->recipientAgency = (string) ($this->values['instansi'] ?? '');
@@ -111,6 +125,41 @@ class LetterComposer extends Component
             $this->kodeKegiatan = $ws->activity_code;
         }
 
+        $tanggalSuratParam = request()->query('tanggal_surat');
+        if ($tanggalSuratParam && strtotime($tanggalSuratParam)) {
+            $this->letterDate = \Carbon\Carbon::parse($tanggalSuratParam)->toDateString();
+            $this->calendarContextNote = 'Tanggal surat diatur otomatis dari pilihan kalender: ' . \Carbon\Carbon::parse($this->letterDate)->translatedFormat('d F Y');
+        }
+
+        $tanggalKegiatanParam = request()->query('tanggal_kegiatan');
+        if ($tanggalKegiatanParam && strtotime($tanggalKegiatanParam)) {
+            $this->tanggalKegiatan = \Carbon\Carbon::parse($tanggalKegiatanParam)->toDateString();
+            $this->calendarContextNote = 'Tanggal kegiatan diatur otomatis dari pilihan kalender: ' . \Carbon\Carbon::parse($this->tanggalKegiatan)->translatedFormat('d F Y');
+        }
+
+        $replyToSm = request()->query('reply_to_sm');
+        if ($replyToSm && $ws) {
+            $sm = SuratMasuk::where('workspace_id', $ws->id)->find($replyToSm);
+            if ($sm) {
+                $this->replyToSuratMasukId = $sm->id;
+                if (! request()->filled('perihal')) {
+                    $this->perihal = 'Balasan: ' . $sm->perihal;
+                }
+                if (! request()->filled('instansi')) {
+                    $this->recipientAgency = $sm->pengirim;
+                    $this->values['instansi'] = $sm->pengirim;
+                }
+            }
+        }
+
+        if (request()->filled('perihal')) {
+            $this->perihal = (string) request()->query('perihal');
+        }
+        if (request()->filled('instansi')) {
+            $this->recipientAgency = (string) request()->query('instansi');
+            $this->values['instansi'] = $this->recipientAgency;
+        }
+
         $preselected = request()->query('template_id');
         if ($preselected) {
             $this->templateId = (int) $preselected;
@@ -128,6 +177,25 @@ class LetterComposer extends Component
     {
         $this->values = [];
         $this->initializeTemplateDefaults();
+    }
+
+    public function updatedReplyToSuratMasukId(?int $value): void
+    {
+        if (! $value) {
+            return;
+        }
+
+        $ws = app(CurrentWorkspace::class)->get();
+        $sm = SuratMasuk::where('workspace_id', $ws?->id)->find($value);
+        if ($sm) {
+            if (empty(trim($this->perihal))) {
+                $this->perihal = 'Balasan: ' . $sm->perihal;
+            }
+            if (empty(trim($this->recipientAgency))) {
+                $this->recipientAgency = $sm->pengirim;
+                $this->values['instansi'] = $sm->pengirim;
+            }
+        }
     }
 
     public function setLetterMode(string $mode): void
@@ -292,6 +360,7 @@ class LetterComposer extends Component
         $rules = [
             'perihal' => ['required', 'string', 'max:255'],
             'letterDate' => ['required', 'date'],
+            'tanggalKegiatan' => ['nullable', 'date'],
             'city' => ['nullable', 'string', 'max:100'],
             'signers' => ['nullable', 'array', 'max:12'],
             'signers.*.prefix' => ['nullable', 'string', 'max:60'],
@@ -342,6 +411,8 @@ class LetterComposer extends Component
                 $letter = $updateAction->execute($existing, auth()->user(), [
                     'perihal' => $this->perihal,
                     'letter_date' => $this->letterDate,
+                    'tanggal_kegiatan' => $this->tanggalKegiatan ?: null,
+                    'surat_masuk_id' => $this->replyToSuratMasukId,
                     'variables' => $payloadValues,
                     'link_drive' => $this->linkDrive ? trim($this->linkDrive) : null,
                 ]);
@@ -349,9 +420,11 @@ class LetterComposer extends Component
                 $letter = $createAction->execute($ws, auth()->user(), [
                     'template_id' => $this->letterMode === 'template' ? $this->templateId : null,
                     'is_manual_number' => $this->letterMode === 'manual_number',
+                    'surat_masuk_id' => $this->replyToSuratMasukId,
                     'link_drive' => $this->linkDrive ? trim($this->linkDrive) : null,
                     'perihal' => $this->perihal,
                     'letter_date' => $this->letterDate,
+                    'tanggal_kegiatan' => $this->tanggalKegiatan ?: null,
                     'variables' => $payloadValues,
                 ]);
             }
@@ -388,6 +461,38 @@ class LetterComposer extends Component
         return $this->isKegiatan ? strtoupper(trim($this->kodeKegiatan)) : '';
     }
 
+    public function openSelectSmModal(): void
+    {
+        $this->showSelectSmModal = true;
+    }
+
+    public function closeSelectSmModal(): void
+    {
+        $this->showSelectSmModal = false;
+    }
+
+    public function selectSuratMasuk(int $id): void
+    {
+        $ws = app(CurrentWorkspace::class)->get();
+        $sm = SuratMasuk::where('workspace_id', $ws?->id)->find($id);
+        if ($sm) {
+            $this->replyToSuratMasukId = $sm->id;
+            if (blank($this->perihal)) {
+                $this->perihal = 'Balasan: ' . $sm->perihal;
+            }
+            if (blank($this->recipientAgency)) {
+                $this->recipientAgency = $sm->pengirim;
+                $this->values['instansi'] = $sm->pengirim;
+            }
+        }
+        $this->showSelectSmModal = false;
+    }
+
+    public function removeReplySuratMasuk(): void
+    {
+        $this->replyToSuratMasukId = null;
+    }
+
     public function render(VariableTypeResolver $resolver)
     {
         $ws = app(CurrentWorkspace::class)->get();
@@ -400,7 +505,7 @@ class LetterComposer extends Component
         $liveNumberPreview = null;
         try {
             $dateObj = \Carbon\Carbon::parse($this->letterDate ?: now());
-            $nextSeq = ($ws?->numbers()->max('sequence') ?? 0) + 1;
+            $nextSeq = app(\App\Services\Numbering\NumberAllocator::class)->resolveNextSequence($ws, $dateObj);
             $liveNumberPreview = app(\App\Services\Numbering\NumberPatternRenderer::class)->render(
                 $ws->number_pattern,
                 $ws,
@@ -416,6 +521,22 @@ class LetterComposer extends Component
             $liveNumberPreview = null;
         }
 
+        $selectedSuratMasuk = $this->replyToSuratMasukId
+            ? SuratMasuk::where('workspace_id', $ws?->id)->find($this->replyToSuratMasukId)
+            : null;
+
+        $suratMasukQuery = SuratMasuk::where('workspace_id', $ws?->id)->orderByDesc('id');
+        if (filled($this->searchSuratMasuk)) {
+            $search = '%' . trim($this->searchSuratMasuk) . '%';
+            $suratMasukQuery->where(function ($q) use ($search) {
+                $q->where('nomor_agenda', 'like', $search)
+                    ->orWhere('nomor_surat_pengirim', 'like', $search)
+                    ->orWhere('pengirim', 'like', $search)
+                    ->orWhere('perihal', 'like', $search);
+            });
+        }
+        $suratMasukList = $suratMasukQuery->limit(20)->get(['id', 'nomor_agenda', 'nomor_surat_pengirim', 'pengirim', 'perihal', 'tanggal_surat']);
+
         return view('livewire.letters.letter-composer', [
             'workspace' => $ws,
             'templates' => $templates,
@@ -424,6 +545,21 @@ class LetterComposer extends Component
             'letterTypes' => $ws?->letterTypes() ?? config('suratinaja.letter_types', []),
             'letterParameters' => config('suratinaja.letter_parameters', []),
             'liveNumberPreview' => $liveNumberPreview,
+            'selectedSuratMasuk' => $selectedSuratMasuk,
+            'suratMasukList' => $suratMasukList,
+        ])->layout('components.layouts.app', [
+            'title' => $this->letterId ? 'Edit Draft Surat' : 'Buat Surat',
+            'breadcrumbs' => $this->letterId
+                ? [
+                    ['label' => 'Daftar Surat', 'url' => route('letters.index')],
+                    ['label' => 'Detail Surat', 'url' => route('letters.show', $this->letterId)],
+                    ['label' => 'Edit Draft Surat'],
+                ]
+                : [
+                    ['label' => 'Daftar Surat', 'url' => route('letters.index')],
+                    ['label' => 'Buat Surat'],
+                ],
+            'backUrl' => $this->letterId ? route('letters.show', $this->letterId) : route('letters.index'),
         ]);
     }
 

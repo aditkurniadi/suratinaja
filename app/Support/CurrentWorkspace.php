@@ -13,6 +13,12 @@ class CurrentWorkspace
     public function set(?Workspace $workspace): void
     {
         $this->workspace = $workspace;
+        if ($workspace?->id) {
+            setPermissionsTeamId($workspace->id);
+            if (auth()->check()) {
+                app(\App\Services\Authorization\WorkspacePermissionRegistrar::class)->ensureUserRoleSynced($workspace, auth()->user());
+            }
+        }
     }
 
     public function get(): ?Workspace
@@ -27,7 +33,13 @@ class CurrentWorkspace
             return null;
         }
 
-        return $this->workspace = $user->activeWorkspace();
+        $this->workspace = $user->activeWorkspace();
+        if ($this->workspace?->id) {
+            setPermissionsTeamId($this->workspace->id);
+            app(\App\Services\Authorization\WorkspacePermissionRegistrar::class)->ensureUserRoleSynced($this->workspace, $user);
+        }
+
+        return $this->workspace;
     }
 
     public function id(): ?int

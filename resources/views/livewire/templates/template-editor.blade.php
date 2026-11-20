@@ -100,8 +100,10 @@
             <div class="flex items-center gap-2 min-w-0">
                 <a
                     href="{{ $backUrl }}"
-                    class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
-                    title="Kembali ke Daftar Template"
+                    @click.prevent="window.SuratinAjaNav ? window.SuratinAjaNav.goBack('{{ $backUrl }}') : (window.location.href = '{{ $backUrl }}')"
+                    class="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border bg-background text-muted-foreground hover:bg-accent hover:text-foreground transition-colors cursor-pointer"
+                    title="Kembali ke halaman sebelumnya"
+                    aria-label="Kembali ke halaman sebelumnya"
                 >
                     <x-lucide-arrow-left class="size-4" />
                 </a>
@@ -269,7 +271,7 @@
                 <div
                     wire:ignore
                     x-data="onlyOfficeTemplateDocEditor({
-                        apiUrl: '{{ rtrim(config('suratinaja.onlyoffice.url', 'https://office-suratinaja.test'), '/') }}/web-apps/apps/api/documents/api.js',
+                        apiUrl: '{{ rtrim(config('suratinaja.onlyoffice.url', 'http://127.0.0.1:8082'), '/') }}/web-apps/apps/api/documents/api.js',
                         config: @js($onlyOfficeConfig),
                     })"
                     x-init="initEditor()"

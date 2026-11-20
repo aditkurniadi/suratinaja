@@ -185,7 +185,7 @@ class OnlyOfficeController extends Controller
      */
     public function pluginIndex(): Response
     {
-        $ooUrl = rtrim((string) config('suratinaja.onlyoffice.url', 'https://office-suratinaja.test'), '/');
+        $ooUrl = rtrim((string) config('suratinaja.onlyoffice.url', 'http://127.0.0.1:8082'), '/');
         $sdkScript = htmlspecialchars($ooUrl.'/sdkjs-plugins/v1/plugins.js', ENT_QUOTES, 'UTF-8');
 
         $html = <<<HTML
@@ -331,6 +331,135 @@ HTML;
         return response($svg, 200, array_merge($this->pluginCorsHeaders(), [
             'Content-Type' => 'image/svg+xml',
         ]));
+    }
+
+    public function downloadEnvelopeTemplate(Request $request, int $templateId): BinaryFileResponse|JsonResponse
+    {
+        $template = \App\Models\EnvelopeTemplate::findOrFail($templateId);
+        $token = (string) $request->query('token');
+
+        if (! $this->onlyOfficeService->verifyEnvelopeAccessToken($token, $template, 'download')) {
+            Log::warning("Unauthorized OnlyOffice envelope download request for template {$template->id}");
+
+            return response()->json(['error' => 'Unauthorized or expired token'], 403);
+        }
+
+        if (! $template->file_path || ! Storage::disk('local')->exists($template->file_path)) {
+            return response()->json(['error' => 'Template file not found'], 404);
+        }
+
+        $fullPath = Storage::disk('local')->path($template->file_path);
+        $fileName = Str::slug($template->name ?: "envelope-{$template->id}").'.docx';
+
+        return response()->download($fullPath, $fileName, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'Content-Disposition' => 'attachment; filename="'.$fileName.'"',
+        ]);
+    }
+
+    public function callbackEnvelopeTemplate(Request $request, int $templateId): JsonResponse
+    {
+        $template = \App\Models\EnvelopeTemplate::findOrFail($templateId);
+        $token = (string) $request->query('token');
+
+        $authorized = $this->onlyOfficeService->verifyEnvelopeAccessToken($token, $template, 'callback');
+        $body = $request->json()->all();
+
+        $jwtToken = $request->bearerToken() ?? ($body['token'] ?? null);
+        if ($jwtToken) {
+            $jwtPayload = $this->onlyOfficeService->validateJwtToken($jwtToken);
+            if ($jwtPayload) {
+                $authorized = true;
+                if (isset($jwtPayload['payload']) && is_array($jwtPayload['payload'])) {
+                    $body = $jwtPayload['payload'];
+                } elseif (isset($jwtPayload['status'])) {
+                    $body = $jwtPayload;
+                }
+            }
+        }
+
+        if (! $authorized) {
+            Log::warning("Unauthorized OnlyOffice envelope callback request for template {$template->id}");
+
+            return response()->json(['error' => 1, 'message' => 'Unauthorized callback'], 403);
+        }
+
+        $result = $this->onlyOfficeService->handleEnvelopeSaveCallback($template, $body);
+
+        return response()->json($result);
+    }
+
+    public function downloadKopMaster(Request $request, int $workspaceId): BinaryFileResponse|JsonResponse
+    {
+        $workspace = \App\Models\Workspace::findOrFail($workspaceId);
+        $token = (string) $request->query('token');
+
+        if (! $this->onlyOfficeService->verifyKopMasterAccessToken($token, $workspace, 'download')) {
+            Log::warning("Unauthorized OnlyOffice kop master download request for workspace {$workspace->id}");
+
+            return response()->json(['error' => 'Unauthorized or expired token'], 403);
+        }
+
+        if (! $workspace->kop_master_docx_path || ! Storage::disk('local')->exists($workspace->kop_master_docx_path)) {
+            return response()->json(['error' => 'Kop master file not found'], 404);
+        }
+
+        $fullPath = Storage::disk('local')->path($workspace->kop_master_docx_path);
+        $fileName = 'master-kop-'.Str::slug($workspace->name).'.docx';
+
+        return response()->download($fullPath, $fileName, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'Content-Disposition' => 'attachment; filename="'.$fileName.'"',
+        ]);
+    }
+
+    public function callbackKopMaster(Request $request, int $workspaceId): JsonResponse
+    {
+        $workspace = \App\Models\Workspace::findOrFail($workspaceId);
+        $token = (string) $request->query('token');
+
+        $authorized = $this->onlyOfficeService->verifyKopMasterAccessToken($token, $workspace, 'callback');
+        $body = $request->json()->all();
+
+        $jwtToken = $request->bearerToken() ?? ($body['token'] ?? null);
+        if ($jwtToken) {
+            $jwtPayload = $this->onlyOfficeService->validateJwtToken($jwtToken);
+            if ($jwtPayload) {
+                $authorized = true;
+                if (isset($jwtPayload['payload']) && is_array($jwtPayload['payload'])) {
+                    $body = $jwtPayload['payload'];
+                } elseif (isset($jwtPayload['status'])) {
+                    $body = $jwtPayload;
+                }
+            }
+        }
+
+        if (! $authorized) {
+            Log::warning("Unauthorized OnlyOffice kop master callback request for workspace {$workspace->id}");
+
+            return response()->json(['error' => 1, 'message' => 'Unauthorized callback'], 403);
+        }
+
+        $result = $this->onlyOfficeService->handleKopMasterSaveCallback($workspace, $body);
+
+        return response()->json($result);
+    }
+
+    public function rawDownload(Request $request): BinaryFileResponse|JsonResponse
+    {
+        $relPath = (string) $request->query('path');
+        $token = (string) $request->query('token');
+
+        $expectedToken = hash_hmac('sha256', $relPath, config('app.key'));
+        if (! hash_equals($expectedToken, $token) || ! Storage::disk('local')->exists($relPath)) {
+            return response()->json(['error' => 'Unauthorized or file missing'], 403);
+        }
+
+        $fullPath = Storage::disk('local')->path($relPath);
+
+        return response()->download($fullPath, basename($relPath), [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        ]);
     }
 
     /**

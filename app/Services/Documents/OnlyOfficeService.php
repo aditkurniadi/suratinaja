@@ -4,10 +4,12 @@ namespace App\Services\Documents;
 
 use App\Enums\LetterStatus;
 use App\Exceptions\DomainException;
+use App\Models\EnvelopeTemplate;
 use App\Models\Letter;
 use App\Models\LetterActivity;
 use App\Models\LetterTemplate;
 use App\Models\User;
+use App\Models\Workspace;
 use App\Services\Templates\TemplateParser;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -271,6 +273,21 @@ class OnlyOfficeService
     }
 
     /**
+     * Resolves the server-to-server URL of OnlyOffice Document Server.
+     * Prefers internal container URL (e.g. http://onlyoffice:80) for Docker networks,
+     * falling back to the public URL.
+     */
+    private function getServerServiceUrl(): string
+    {
+        $internal = config('suratinaja.onlyoffice.internal_url');
+        if (! empty($internal)) {
+            return rtrim($internal, '/');
+        }
+
+        return rtrim((string) config('suratinaja.onlyoffice.url', 'http://127.0.0.1:8082'), '/');
+    }
+
+    /**
      * Resolves the base URL of this Laravel app accessible by the OnlyOffice container.
      */
     private function getAppServiceBaseUrl(): string
@@ -280,7 +297,7 @@ class OnlyOfficeService
             return $appServiceUrl;
         }
 
-        $appUrl = config('app.url', 'https://suratinaja.test');
+        $appUrl = config('app.url', 'http://localhost');
         // Ensure HTTPS for local dev domain suratinaja.test to avoid 301/302 redirects converting POST to GET
         if (str_contains($appUrl, 'suratinaja.test') && str_starts_with($appUrl, 'http://')) {
             $appUrl = str_replace('http://', 'https://', $appUrl);
@@ -299,7 +316,7 @@ class OnlyOfficeService
             return $url;
         }
 
-        $publicUrl = config('suratinaja.onlyoffice.url', 'https://office-suratinaja.test');
+        $publicUrl = config('suratinaja.onlyoffice.url', 'http://127.0.0.1:8082');
         $publicHost = parse_url($publicUrl, PHP_URL_HOST);
         $urlHost = parse_url($url, PHP_URL_HOST);
 
@@ -372,7 +389,7 @@ class OnlyOfficeService
             $headers['Authorization'] = 'Bearer ' . $jwtToken;
         }
 
-        $convertUrl = rtrim(config('suratinaja.onlyoffice.url', 'https://office-suratinaja.test'), '/') . '/ConvertService.ashx';
+        $convertUrl = $this->getServerServiceUrl() . '/ConvertService.ashx';
 
         try {
             $response = Http::timeout(30)
@@ -454,7 +471,7 @@ class OnlyOfficeService
             $headers['Authorization'] = 'Bearer ' . $jwtToken;
         }
 
-        $commandUrl = rtrim(config('suratinaja.onlyoffice.url', 'https://office-suratinaja.test'), '/') . '/coauthoring/CommandService.ashx';
+        $commandUrl = $this->getServerServiceUrl() . '/coauthoring/CommandService.ashx';
 
         try {
             $response = Http::timeout(10)
@@ -743,7 +760,7 @@ class OnlyOfficeService
             $headers['Authorization'] = 'Bearer ' . $jwtToken;
         }
 
-        $commandUrl = rtrim(config('suratinaja.onlyoffice.url', 'https://office-suratinaja.test'), '/') . '/coauthoring/CommandService.ashx';
+        $commandUrl = $this->getServerServiceUrl() . '/coauthoring/CommandService.ashx';
 
         try {
             $response = Http::timeout(10)
@@ -838,6 +855,362 @@ class OnlyOfficeService
             'has_variables' => count($schema) > 0,
             'version' => (int) ($template->version ?? 1),
         ];
+    }
+
+    public function getEnvelopeDocumentKey(EnvelopeTemplate $template): string
+    {
+        return 'envelope_' . $template->id . '_v' . ($template->version ?? 1) . '_' . ($template->updated_at?->timestamp ?? time());
+    }
+
+    public function generateEnvelopeAccessToken(EnvelopeTemplate $template, string $action, int $ttlSeconds = 86400): string
+    {
+        $payload = [
+            'type' => 'envelope_template',
+            'id' => $template->id,
+            'action' => $action,
+            'exp' => time() + $ttlSeconds,
+        ];
+        $json = json_encode($payload);
+        $sig = hash_hmac('sha256', $json, config('app.key'));
+
+        return $this->base64UrlEncode($json) . '.' . $this->base64UrlEncode($sig);
+    }
+
+    public function verifyEnvelopeAccessToken(string $token, EnvelopeTemplate $template, string $action): bool
+    {
+        $parts = explode('.', $token);
+        if (count($parts) !== 2) {
+            return false;
+        }
+
+        $json = $this->base64UrlDecode($parts[0]);
+        $sig = $this->base64UrlDecode($parts[1]);
+
+        $expectedSig = hash_hmac('sha256', $json, config('app.key'));
+        if (! hash_equals($expectedSig, $sig)) {
+            return false;
+        }
+
+        $data = json_decode($json, true);
+        if (! is_array($data)) {
+            return false;
+        }
+
+        if (($data['type'] ?? '') !== 'envelope_template' || (int) ($data['id'] ?? 0) !== (int) $template->id || ($data['action'] ?? '') !== $action) {
+            return false;
+        }
+
+        return ($data['exp'] ?? 0) >= time();
+    }
+
+    public function buildEnvelopeEditorConfig(EnvelopeTemplate $template, ?User $user = null, bool $canEdit = true): array
+    {
+        if (! $template->file_path || ! Storage::disk('local')->exists($template->file_path)) {
+            throw DomainException::templateInvalid('File master template amplop .docx tidak ditemukan di storage.');
+        }
+
+        $downloadToken = $this->generateEnvelopeAccessToken($template, 'download');
+        $callbackToken = $this->generateEnvelopeAccessToken($template, 'callback');
+
+        $baseUrl = $this->getAppServiceBaseUrl();
+        $downloadUrl = rtrim($baseUrl, '/') . "/api/onlyoffice/envelopes/download/{$template->id}?token={$downloadToken}";
+        $callbackUrl = rtrim($baseUrl, '/') . "/api/onlyoffice/envelopes/callback/{$template->id}?token={$callbackToken}";
+
+        $docKey = $this->getEnvelopeDocumentKey($template);
+        $docTitle = trim((string) $template->name) ?: "Amplop_{$template->id}";
+        if (! str_ends_with(strtolower($docTitle), '.docx')) {
+            $docTitle .= '.docx';
+        }
+
+        $editorConfig = [
+            'mode' => $canEdit ? 'edit' : 'view',
+            'lang' => 'id',
+            'callbackUrl' => $callbackUrl,
+            'user' => [
+                'id' => (string) ($user ? $user->id : '1'),
+                'name' => $user ? $user->name : 'Pengguna',
+            ],
+            'customization' => [
+                'autosave' => true,
+                'forcesave' => true,
+                'compactHeader' => false,
+                'toolbarNoTabs' => false,
+                'help' => false,
+                'feedback' => false,
+                'uiTheme' => 'theme-light',
+                'unit' => 'cm',
+            ],
+        ];
+
+        $config = [
+            'documentType' => 'word',
+            'document' => [
+                'fileType' => 'docx',
+                'key' => $docKey,
+                'title' => $docTitle,
+                'url' => $downloadUrl,
+                'permissions' => [
+                    'edit' => $canEdit,
+                    'download' => true,
+                    'print' => true,
+                    'review' => false,
+                    'comment' => false,
+                ],
+            ],
+            'editorConfig' => $editorConfig,
+            'type' => 'desktop',
+            'width' => '100%',
+            'height' => '100%',
+        ];
+
+        $jwtSecret = config('suratinaja.onlyoffice.jwt_secret');
+        if (! empty($jwtSecret)) {
+            $config['token'] = $this->generateJwtToken($config, $jwtSecret);
+        }
+
+        return $config;
+    }
+
+    public function handleEnvelopeSaveCallback(EnvelopeTemplate $template, array $payload): array
+    {
+        $status = (int) ($payload['status'] ?? 0);
+        $downloadUrl = (string) ($payload['url'] ?? '');
+
+        if (in_array($status, [2, 6], true) && ! empty($downloadUrl)) {
+            $response = Http::timeout(60)
+                ->withoutVerifying()
+                ->get($downloadUrl);
+
+            if ($response->successful()) {
+                Storage::disk('local')->put($template->file_path, $response->body());
+                $template->forceFill([
+                    'version' => ((int) ($template->version ?? 1)) + 1,
+                    'updated_at' => now(),
+                ])->save();
+
+                return ['error' => 0];
+            }
+
+            return ['error' => 1, 'message' => 'Gagal mengunduh file hasil simpan OnlyOffice'];
+        }
+
+        return ['error' => 0];
+    }
+
+    public function getKopMasterDocumentKey(Workspace $workspace): string
+    {
+        return 'kop_master_' . $workspace->id . '_v' . ($workspace->kop_master_version ?? 1) . '_' . ($workspace->updated_at?->timestamp ?? time());
+    }
+
+    public function generateKopMasterAccessToken(Workspace $workspace, string $action, int $ttlSeconds = 86400): string
+    {
+        $payload = [
+            'type' => 'kop_master',
+            'id' => $workspace->id,
+            'action' => $action,
+            'exp' => time() + $ttlSeconds,
+        ];
+        $json = json_encode($payload);
+        $sig = hash_hmac('sha256', $json, config('app.key'));
+
+        return $this->base64UrlEncode($json) . '.' . $this->base64UrlEncode($sig);
+    }
+
+    public function verifyKopMasterAccessToken(string $token, Workspace $workspace, string $action): bool
+    {
+        $parts = explode('.', $token);
+        if (count($parts) !== 2) {
+            return false;
+        }
+
+        $json = $this->base64UrlDecode($parts[0]);
+        $sig = $this->base64UrlDecode($parts[1]);
+
+        $expectedSig = hash_hmac('sha256', $json, config('app.key'));
+        if (! hash_equals($expectedSig, $sig)) {
+            return false;
+        }
+
+        $data = json_decode($json, true);
+        if (! is_array($data)) {
+            return false;
+        }
+
+        if (($data['type'] ?? '') !== 'kop_master' || (int) ($data['id'] ?? 0) !== (int) $workspace->id || ($data['action'] ?? '') !== $action) {
+            return false;
+        }
+
+        return ($data['exp'] ?? 0) >= time();
+    }
+
+    public function buildKopMasterEditorConfig(Workspace $workspace, ?User $user = null, bool $canEdit = true): array
+    {
+        if (! $workspace->kop_master_docx_path || ! Storage::disk('local')->exists($workspace->kop_master_docx_path)) {
+            throw DomainException::templateInvalid('File master kop surat .docx tidak ditemukan di storage.');
+        }
+
+        $downloadToken = $this->generateKopMasterAccessToken($workspace, 'download');
+        $callbackToken = $this->generateKopMasterAccessToken($workspace, 'callback');
+
+        $baseUrl = $this->getAppServiceBaseUrl();
+        $downloadUrl = rtrim($baseUrl, '/') . "/api/onlyoffice/kop-master/download/{$workspace->id}?token={$downloadToken}";
+        $callbackUrl = rtrim($baseUrl, '/') . "/api/onlyoffice/kop-master/callback/{$workspace->id}?token={$callbackToken}";
+
+        $docKey = $this->getKopMasterDocumentKey($workspace);
+        $docTitle = 'Master_Kop_' . \Illuminate\Support\Str::slug($workspace->name) . '.docx';
+
+        $editorConfig = [
+            'mode' => $canEdit ? 'edit' : 'view',
+            'lang' => 'id',
+            'callbackUrl' => $callbackUrl,
+            'user' => [
+                'id' => (string) ($user ? $user->id : '1'),
+                'name' => $user ? $user->name : 'Pengguna',
+            ],
+            'customization' => [
+                'autosave' => true,
+                'forcesave' => true,
+                'compactHeader' => false,
+                'toolbarNoTabs' => false,
+                'help' => false,
+                'feedback' => false,
+                'uiTheme' => 'theme-light',
+                'unit' => 'cm',
+            ],
+        ];
+
+        $config = [
+            'documentType' => 'word',
+            'document' => [
+                'fileType' => 'docx',
+                'key' => $docKey,
+                'title' => $docTitle,
+                'url' => $downloadUrl,
+                'permissions' => [
+                    'edit' => $canEdit,
+                    'download' => true,
+                    'print' => true,
+                    'review' => false,
+                    'comment' => false,
+                ],
+            ],
+            'editorConfig' => $editorConfig,
+            'type' => 'desktop',
+            'width' => '100%',
+            'height' => '100%',
+        ];
+
+        $jwtSecret = config('suratinaja.onlyoffice.jwt_secret');
+        if (! empty($jwtSecret)) {
+            $config['token'] = $this->generateJwtToken($config, $jwtSecret);
+        }
+
+        return $config;
+    }
+
+    public function handleKopMasterSaveCallback(Workspace $workspace, array $payload): array
+    {
+        $status = (int) ($payload['status'] ?? 0);
+        $downloadUrl = (string) ($payload['url'] ?? '');
+
+        if (in_array($status, [2, 6], true) && ! empty($downloadUrl)) {
+            $response = Http::timeout(60)
+                ->withoutVerifying()
+                ->get($downloadUrl);
+
+            if ($response->successful()) {
+                Storage::disk('local')->put($workspace->kop_master_docx_path, $response->body());
+                $workspace->forceFill([
+                    'kop_master_version' => ((int) ($workspace->kop_master_version ?? 1)) + 1,
+                    'updated_at' => now(),
+                ])->save();
+
+                return ['error' => 0];
+            }
+
+            return ['error' => 1, 'message' => 'Gagal mengunduh file hasil simpan OnlyOffice'];
+        }
+
+        return ['error' => 0];
+    }
+
+    public function convertArbitraryDocxToPdf(string $docxRelativePath, string $pdfRelativePath, string $key, string $title = 'Dokumen.docx'): array
+    {
+        if (! Storage::disk('local')->exists($docxRelativePath)) {
+            return ['ok' => false, 'message' => "File .docx tidak ditemukan di {$docxRelativePath}"];
+        }
+
+        // Check if PDF already exists and is fresh
+        if (Storage::disk('local')->exists($pdfRelativePath)) {
+            $docxMtime = Storage::disk('local')->lastModified($docxRelativePath);
+            $pdfMtime = Storage::disk('local')->lastModified($pdfRelativePath);
+            if ($pdfMtime >= $docxMtime) {
+                return ['ok' => true, 'path' => $pdfRelativePath];
+            }
+        }
+
+        $downloadToken = hash_hmac('sha256', $docxRelativePath, config('app.key'));
+        $baseUrl = $this->getAppServiceBaseUrl();
+        $downloadUrl = rtrim($baseUrl, '/') . '/api/onlyoffice/raw-download?path=' . urlencode($docxRelativePath) . '&token=' . $downloadToken;
+
+        $payload = [
+            'async' => false,
+            'filetype' => 'docx',
+            'key' => $key . '_' . time(),
+            'outputtype' => 'pdf',
+            'title' => $title,
+            'url' => $downloadUrl,
+        ];
+
+        $jwtSecret = config('suratinaja.onlyoffice.jwt_secret');
+        $headers = [
+            'Content-Type' => 'application/json',
+            'Accept' => 'application/json',
+        ];
+
+        if (! empty($jwtSecret)) {
+            $jwtToken = $this->generateJwtToken($payload, $jwtSecret);
+            $payload['token'] = $jwtToken;
+            $headers['Authorization'] = 'Bearer ' . $jwtToken;
+        }
+
+        $convertUrl = $this->getServerServiceUrl() . '/ConvertService.ashx';
+
+        try {
+            $response = Http::timeout(30)
+                ->withoutVerifying()
+                ->withHeaders($headers)
+                ->post($convertUrl, $payload);
+
+            if ($response->successful()) {
+                $data = $response->json();
+                if (isset($data['fileUrl']) && ! empty($data['fileUrl'])) {
+                    $pdfContent = Http::timeout(30)->withoutVerifying()->get($data['fileUrl'])->body();
+                    Storage::disk('local')->put($pdfRelativePath, $pdfContent);
+
+                    return ['ok' => true, 'path' => $pdfRelativePath];
+                }
+            }
+        } catch (\Throwable $e) {
+            Log::warning("OnlyOffice conversion fallback: {$e->getMessage()}");
+        }
+
+        // Secondary fallback to Gotenberg
+        try {
+            $baseUrl = rtrim((string) config('suratinaja.preview.gotenberg_url', 'http://localhost:3000'), '/');
+            $docxAbs = Storage::disk('local')->path($docxRelativePath);
+            $response = Http::connectTimeout(1)->timeout(3)
+                ->attach('files', fopen($docxAbs, 'r'), 'doc.docx')
+                ->post("{$baseUrl}/forms/libreoffice/convert");
+
+            if ($response->successful()) {
+                Storage::disk('local')->put($pdfRelativePath, $response->body());
+
+                return ['ok' => true, 'path' => $pdfRelativePath];
+            }
+        } catch (\Throwable) {}
+
+        return ['ok' => false, 'message' => 'Konversi PDF gagal'];
     }
 
     /**

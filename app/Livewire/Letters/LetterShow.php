@@ -12,6 +12,7 @@ use App\Services\Documents\OnlyOfficeService;
 use App\Services\Templates\VariableTypeResolver;
 use App\Support\CurrentWorkspace;
 use Livewire\Attributes\Title;
+use Livewire\Attributes\Url;
 use Livewire\Component;
 
 #[Title('Detail Surat')]
@@ -19,7 +20,8 @@ class LetterShow extends Component
 {
     public Letter $letter;
 
-    public string $activeRightTab = 'editor';
+    #[Url(except: 'preview')]
+    public string $activeRightTab = 'preview';
 
     public bool $showDetailModal = false;
 
@@ -42,10 +44,16 @@ class LetterShow extends Component
 
     public ?string $cancelError = null;
 
+    public bool $showEnvelopeModal = false;
+
+    public ?int $selectedEnvelopeTemplateId = null;
+
+    public int $envelopePreviewVersion = 1;
+
     public function mount(Letter|int $letter): void
     {
         $id = $letter instanceof Letter ? $letter->id : $letter;
-        $this->letter = Letter::with(['activeNumber', 'numbers', 'revisions.actor', 'revisions.oldNumber', 'revisions.newNumber', 'activities.actor', 'template', 'author'])
+        $this->letter = Letter::with(['activeNumber', 'numbers', 'revisions.actor', 'revisions.oldNumber', 'revisions.newNumber', 'activities.actor', 'template', 'author', 'suratMasuk'])
             ->findOrFail($id);
 
         $this->revisionPerihal = $this->letter->perihal;
@@ -58,6 +66,13 @@ class LetterShow extends Component
 
     public function transition(string $target, TransitionLetterStatusAction $action): void
     {
+        $canAcc = auth()->user()->can('surat_keluar.acc');
+        $canEdit = auth()->user()->can('surat_keluar.edit');
+        if (! $canAcc && ! $canEdit && ! (app(CurrentWorkspace::class)->get()?->roleOf(auth()->user())?->canWrite())) {
+            $this->dispatch('toast', ['type' => 'error', 'title' => 'Akses ditolak', 'description' => 'Anda tidak memiliki hak akses mengubah status surat ini.']);
+            return;
+        }
+
         try {
             $this->letter = $action->execute($this->letter, auth()->user(), $target);
             $this->dispatch('toast', ['type' => 'success', 'title' => 'Status surat diperbarui']);
@@ -68,6 +83,11 @@ class LetterShow extends Component
 
     public function submitRevision(ReviseLetterAction $action): void
     {
+        if (! auth()->user()->can('surat_keluar.edit') && ! (app(CurrentWorkspace::class)->get()?->roleOf(auth()->user())?->canWrite())) {
+            $this->revisionError = 'Anda tidak memiliki hak akses merevisi surat.';
+            return;
+        }
+
         $this->revisionError = null;
 
         try {
@@ -94,6 +114,11 @@ class LetterShow extends Component
 
     public function submitCancel(CancelLetterAction $action): void
     {
+        if (! auth()->user()->can('surat_keluar.delete') && ! (app(CurrentWorkspace::class)->get()?->roleOf(auth()->user())?->canWrite())) {
+            $this->cancelError = 'Anda tidak memiliki hak akses membatalkan surat.';
+            return;
+        }
+
         $this->cancelError = null;
 
         try {
@@ -113,6 +138,11 @@ class LetterShow extends Component
 
     public function duplicate(DuplicateLetterAction $action): void
     {
+        if (! auth()->user()->can('surat_keluar.create') && ! (app(CurrentWorkspace::class)->get()?->roleOf(auth()->user())?->canWrite())) {
+            $this->dispatch('toast', ['type' => 'error', 'title' => 'Akses ditolak', 'description' => 'Anda tidak memiliki hak akses membuat/menduplikasi surat.']);
+            return;
+        }
+
         try {
             $copy = $action->execute($this->letter, auth()->user());
             $this->redirect(route('letters.show', $copy->id), navigate: false);
@@ -127,28 +157,75 @@ class LetterShow extends Component
         $this->dispatch('toast', ['type' => 'success', 'title' => 'Pratinjau diperbarui']);
     }
 
+    public function openEnvelopeModal(?int $templateId = null): void
+    {
+        $workspace = app(CurrentWorkspace::class)->get();
+        if (! $workspace) {
+            return;
+        }
+
+        if ($templateId !== null) {
+            $this->selectedEnvelopeTemplateId = $templateId;
+        } else {
+            $defaultTemplate = \App\Models\EnvelopeTemplate::where('workspace_id', $workspace->id)
+                ->where('is_default', true)
+                ->first()
+                ?? \App\Models\EnvelopeTemplate::where('workspace_id', $workspace->id)->first();
+
+            $this->selectedEnvelopeTemplateId = $defaultTemplate?->id;
+        }
+
+        $this->envelopePreviewVersion = time();
+        $this->showEnvelopeModal = true;
+    }
+
+    public function changeEnvelopeTemplate(int $templateId): void
+    {
+        $this->selectedEnvelopeTemplateId = $templateId;
+        $this->envelopePreviewVersion = time();
+    }
+
     public function render(VariableTypeResolver $resolver, OnlyOfficeService $onlyOfficeService)
     {
         $workspace = app(CurrentWorkspace::class)->get();
+        $envelopeTemplates = $workspace
+            ? \App\Models\EnvelopeTemplate::where('workspace_id', $workspace->id)->get()
+            : collect();
         $role = $workspace ? $workspace->roleOf(auth()->user()) : null;
         $editableFields = $this->letter->template
             ? $resolver->editableFields($this->letter->template->variables_schema ?? [])
             : [];
 
+        $user = auth()->user();
+        $canEdit = ($user?->can('surat_keluar.edit') || ($role?->canWrite() ?? false))
+            && in_array($this->letter->status, [\App\Enums\LetterStatus::Draft, \App\Enums\LetterStatus::MenungguTtd], true);
+
         $onlyOfficeConfig = null;
-        if (! $this->letter->is_manual_number) {
+        if ($canEdit && ! $this->letter->is_manual_number && $this->activeRightTab === 'editor') {
             try {
-                $onlyOfficeConfig = $onlyOfficeService->buildEditorConfig($this->letter, auth()->user());
+                $onlyOfficeConfig = $onlyOfficeService->buildEditorConfig($this->letter, $user);
             } catch (\Throwable) {
                 $onlyOfficeConfig = null;
             }
         }
 
+        $letterLabel = 'Detail Surat' . ($this->letter->formatted_number ? " ({$this->letter->formatted_number})" : '');
+
         return view('livewire.letters.letter-show', [
             'workspace' => $workspace,
             'role' => $role,
+            'canEdit' => $canEdit,
             'editableFields' => $editableFields,
             'onlyOfficeConfig' => $onlyOfficeConfig,
-        ])->layout('components.layouts.app', ['fullWidth' => true]);
+            'envelopeTemplates' => $envelopeTemplates,
+        ])->layout('components.layouts.app', [
+            'title' => $letterLabel,
+            'breadcrumbs' => [
+                ['label' => 'Daftar Surat', 'url' => route('letters.index')],
+                ['label' => $letterLabel],
+            ],
+            'backUrl' => route('letters.index'),
+            'fullWidth' => true,
+        ]);
     }
 }

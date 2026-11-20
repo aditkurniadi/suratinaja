@@ -10,10 +10,11 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Spatie\Permission\Traits\HasRoles;
 
 class User extends Authenticatable
 {
-    use HasFactory, Notifiable;
+    use HasFactory, HasRoles, Notifiable;
 
     protected $fillable = [
         'name',
@@ -83,6 +84,9 @@ class User extends Authenticatable
         }
         $this->forceFill(['current_workspace_id' => $workspace->id])->save();
         app(CurrentWorkspace::class)->set($workspace);
+        setPermissionsTeamId($workspace->id);
+        $this->unsetRelation('roles');
+        $this->unsetRelation('permissions');
     }
 
     public function roleIn(Workspace $workspace): ?WorkspaceRole

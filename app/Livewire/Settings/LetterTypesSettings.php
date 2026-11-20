@@ -25,7 +25,10 @@ class LetterTypesSettings extends Component
     public function mount(): void
     {
         $ws = app(CurrentWorkspace::class)->get();
-        if (! $ws || ! $ws->roleOf(auth()->user())?->isAdmin()) {
+        $user = auth()->user();
+        $role = $ws ? $ws->roleOf($user) : null;
+        $canManage = $user?->is_super_admin || $user?->can('penomoran.manage') || ($role?->isAdmin() || $role?->value === 'secretary');
+        if (! $ws || ! $canManage) {
             abort(403);
         }
 
@@ -54,7 +57,10 @@ class LetterTypesSettings extends Component
     public function save(): void
     {
         $ws = app(CurrentWorkspace::class)->get();
-        if (! $ws || ! $ws->roleOf(auth()->user())?->isAdmin()) {
+        $user = auth()->user();
+        $role = $ws ? $ws->roleOf($user) : null;
+        $canManage = $user?->is_super_admin || $user?->can('penomoran.manage') || ($role?->isAdmin() || $role?->value === 'secretary');
+        if (! $ws || ! $canManage) {
             abort(403);
         }
 
@@ -103,7 +109,10 @@ class LetterTypesSettings extends Component
     public function deleteType(int $index): void
     {
         $ws = app(CurrentWorkspace::class)->get();
-        if (! $ws || ! $ws->roleOf(auth()->user())?->isAdmin()) {
+        $user = auth()->user();
+        $role = $ws ? $ws->roleOf($user) : null;
+        $canManage = $user?->is_super_admin || $user?->can('penomoran.manage') || ($role?->isAdmin() || $role?->value === 'secretary');
+        if (! $ws || ! $canManage) {
             abort(403);
         }
 
@@ -124,7 +133,10 @@ class LetterTypesSettings extends Component
     public function resetToDefaults(): void
     {
         $ws = app(CurrentWorkspace::class)->get();
-        if (! $ws || ! $ws->roleOf(auth()->user())?->isAdmin()) {
+        $user = auth()->user();
+        $role = $ws ? $ws->roleOf($user) : null;
+        $canManage = $user?->is_super_admin || $user?->can('penomoran.manage') || ($role?->isAdmin() || $role?->value === 'secretary');
+        if (! $ws || ! $canManage) {
             abort(403);
         }
 
@@ -149,6 +161,12 @@ class LetterTypesSettings extends Component
 
         return view('livewire.settings.letter-types-settings', [
             'workspace' => $ws,
+        ])->layout('components.layouts.app', [
+            'title' => 'Jenis Surat',
+            'breadcrumbs' => [
+                ['label' => 'Konfigurasi', 'url' => route('settings.numbering')],
+                ['label' => 'Jenis Surat'],
+            ],
         ]);
     }
 }

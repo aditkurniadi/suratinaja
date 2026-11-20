@@ -67,12 +67,22 @@ class UpdateDraftAction
             Storage::disk('local')->delete($letter->preview_pdf_path);
         }
 
-        $letter->fill([
+        $fillData = [
             'perihal' => $perihal,
             'letter_date' => $letterDate->toDateString(),
             'field_values' => $variables,
             'preview_pdf_path' => null,
-        ])->save();
+        ];
+
+        if (array_key_exists('tanggal_kegiatan', $payload)) {
+            $fillData['tanggal_kegiatan'] = ! empty($payload['tanggal_kegiatan']) ? Carbon::parse($payload['tanggal_kegiatan'])->toDateString() : null;
+        }
+
+        if (array_key_exists('surat_masuk_id', $payload)) {
+            $fillData['surat_masuk_id'] = ! empty($payload['surat_masuk_id']) ? (int) $payload['surat_masuk_id'] : null;
+        }
+
+        $letter->fill($fillData)->save();
 
         $docxPath = $this->renderer->renderSingle($letter->fresh(['activeNumber', 'template', 'workspace']));
         $letter->forceFill(['generated_file_path' => $docxPath])->saveQuietly();
