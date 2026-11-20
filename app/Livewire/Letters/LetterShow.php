@@ -8,6 +8,7 @@ use App\Actions\Letters\ReviseLetterAction;
 use App\Actions\Letters\TransitionLetterStatusAction;
 use App\Exceptions\DomainException;
 use App\Models\Letter;
+use App\Services\Documents\OnlyOfficeService;
 use App\Services\Templates\VariableTypeResolver;
 use App\Support\CurrentWorkspace;
 use Livewire\Attributes\Title;
@@ -18,7 +19,9 @@ class LetterShow extends Component
 {
     public Letter $letter;
 
-    public string $activeRightTab = 'history';
+    public string $activeRightTab = 'editor';
+
+    public bool $showDetailModal = false;
 
     public bool $showReviseModal = false;
 
@@ -47,6 +50,10 @@ class LetterShow extends Component
 
         $this->revisionPerihal = $this->letter->perihal;
         $this->revisionVariables = $this->letter->field_values ?? [];
+
+        if ($this->letter->is_manual_number) {
+            $this->activeRightTab = 'preview';
+        }
     }
 
     public function transition(string $target, TransitionLetterStatusAction $action): void
@@ -114,7 +121,13 @@ class LetterShow extends Component
         }
     }
 
-    public function render(VariableTypeResolver $resolver)
+    public function refreshPreview(): void
+    {
+        $this->letter->refresh();
+        $this->dispatch('toast', ['type' => 'success', 'title' => 'Pratinjau diperbarui']);
+    }
+
+    public function render(VariableTypeResolver $resolver, OnlyOfficeService $onlyOfficeService)
     {
         $workspace = app(CurrentWorkspace::class)->get();
         $role = $workspace ? $workspace->roleOf(auth()->user()) : null;
@@ -122,10 +135,20 @@ class LetterShow extends Component
             ? $resolver->editableFields($this->letter->template->variables_schema ?? [])
             : [];
 
+        $onlyOfficeConfig = null;
+        if (! $this->letter->is_manual_number) {
+            try {
+                $onlyOfficeConfig = $onlyOfficeService->buildEditorConfig($this->letter, auth()->user());
+            } catch (\Throwable) {
+                $onlyOfficeConfig = null;
+            }
+        }
+
         return view('livewire.letters.letter-show', [
             'workspace' => $workspace,
             'role' => $role,
             'editableFields' => $editableFields,
-        ]);
+            'onlyOfficeConfig' => $onlyOfficeConfig,
+        ])->layout('components.layouts.app', ['fullWidth' => true]);
     }
 }

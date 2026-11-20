@@ -129,6 +129,12 @@ return [
         'timeout' => (int) env('GOTENBERG_TIMEOUT', 60),
     ],
 
+    'onlyoffice' => [
+        'url' => env('ONLYOFFICE_URL', 'http://127.0.0.1:8082'),
+        'internal_url' => env('ONLYOFFICE_INTERNAL_URL', 'http://onlyoffice:80'),
+        'jwt_secret' => env('ONLYOFFICE_JWT_SECRET', 'suratinaja-onlyoffice-secret-key-12345'),
+    ],
+
     'super_admin' => [
         'email' => env('SUPERADMIN_EMAIL'),
         'password' => env('SUPERADMIN_PASSWORD'),

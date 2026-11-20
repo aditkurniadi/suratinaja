@@ -2,6 +2,7 @@
 
 namespace App\Livewire\Admin;
 
+use App\Actions\Templates\CreateBlankTemplateAction;
 use App\Actions\Templates\UploadTemplateAction;
 use App\Enums\TemplateScope;
 use App\Exceptions\DomainException;
@@ -60,6 +61,34 @@ class GlobalTemplatesIndex extends Component
 
         $this->reset(['name', 'description', 'file']);
         $this->dispatch('toast', ['type' => 'success', 'title' => 'Master template global ditambahkan']);
+    }
+
+    public function createGlobalInOnlyOffice(CreateBlankTemplateAction $action): void
+    {
+        $this->errorMessage = null;
+        $this->validate([
+            'name' => ['required', 'string', 'max:150'],
+            'description' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        try {
+            $tpl = $action->execute(
+                $this->name,
+                auth()->user(),
+                null,
+                TemplateScope::Global,
+                $this->description ?: null,
+                false,
+                'starter',
+            );
+        } catch (DomainException $e) {
+            $this->errorMessage = $e->getMessage();
+
+            return;
+        }
+
+        $this->reset(['name', 'description', 'file']);
+        $this->redirect(route('templates.edit', $tpl->id), navigate: false);
     }
 
     public function uploadNewVersion(UploadTemplateAction $action): void

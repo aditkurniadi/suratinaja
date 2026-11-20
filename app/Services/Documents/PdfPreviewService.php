@@ -8,6 +8,7 @@ use Carbon\Carbon;
 use Dompdf\Dompdf;
 use Dompdf\Options;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Throwable;
 use ZipArchive;
@@ -17,18 +18,19 @@ class PdfPreviewService
     public function __construct(
         private readonly DocxRenderer $docxRenderer,
         private readonly KopInjector $kopInjector,
+        private readonly OnlyOfficeService $onlyOfficeService,
     ) {}
 
     /**
-     * Converts a letter's generated .docx into PDF via Gotenberg (`/forms/libreoffice/convert`)
-     * or falls back to local Dompdf rendering (A4 portrait, 2.54cm Normal Margin, no browser watermarks),
-     * caching the PDF on disk per letter version.
+     * Converts a letter's generated .docx into PDF via OnlyOffice Document Server Conversion API (100% WYSIWYG),
+     * or falls back to Gotenberg (`/forms/libreoffice/convert`) or local Dompdf rendering
+     * (A4 portrait, 2.54cm Normal Margin, no browser watermarks), caching the PDF on disk per letter version.
      *
      * @return array{ok: bool, path?: string, message?: string}
      */
-    public function ensurePreviewPdf(Letter $letter): array
+    public function ensurePreviewPdf(Letter $letter, bool $force = false): array
     {
-        if ($letter->preview_pdf_path && Storage::disk('local')->exists($letter->preview_pdf_path)) {
+        if (! $force && $letter->preview_pdf_path && Storage::disk('local')->exists($letter->preview_pdf_path)) {
             return ['ok' => true, 'path' => $letter->preview_pdf_path];
         }
 
@@ -37,6 +39,18 @@ class PdfPreviewService
             $letter->forceFill(['generated_file_path' => $docxPath])->saveQuietly();
         }
 
+        // 1. Primary Engine: OnlyOffice Document Server Conversion API (100% WYSIWYG matching online editor)
+        try {
+            $ooResult = $this->onlyOfficeService->convertToPdf($letter, $force);
+            if ($ooResult['ok'] && ! empty($ooResult['path'])) {
+                return $ooResult;
+            }
+            Log::warning("OnlyOffice ConvertService did not return success for letter {$letter->id}, falling back: " . ($ooResult['message'] ?? 'unknown error'));
+        } catch (Throwable $e) {
+            Log::warning("OnlyOffice ConvertService failed for letter {$letter->id}, falling back: {$e->getMessage()}");
+        }
+
+        // 2. Secondary Engine: Gotenberg (LibreOffice)
         $docxAbs = Storage::disk('local')->path($letter->generated_file_path);
         $baseUrl = rtrim((string) config('suratinaja.preview.gotenberg_url', 'http://localhost:3000'), '/');
         $timeout = (int) config('suratinaja.preview.timeout', 3);
@@ -58,6 +72,7 @@ class PdfPreviewService
             // Fall through to local Dompdf generator
         }
 
+        // 3. Fallback Engine: Local Dompdf
         return $this->renderWithDompdf($letter, $relativePdf);
     }
 
@@ -333,7 +348,7 @@ HTML;
                     margin: 0;
                 }
                 .sig-space {
-                    height: 42pt;
+                    height: 62pt;
                 }
                 .sig-name {
                     text-decoration: underline;
@@ -873,7 +888,7 @@ HTML;
                 if ($plainCheck === '' && ! str_contains($pContent, '<img')) {
                     if ($hasPageBreak) {
                         if (! $justEmittedPageBreak) {
-                            $bodyHtml .= '<div class="page-break"></div>';
+                            $bodyHtml .= '<div class="page-break" style="page-break-before: always;"></div>';
                             $justEmittedPageBreak = true;
                         }
                         continue;

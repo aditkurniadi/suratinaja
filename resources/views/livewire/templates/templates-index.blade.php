@@ -13,9 +13,13 @@
                     <span>Panduan Variabel &amp; Tabel Word</span>
                 </x-ui.button>
                 @if ($role?->canWrite())
-                    <x-ui.button size="sm" wire:click="$set('showUploadModal', true)">
+                    <x-ui.button variant="outline" size="sm" wire:click="$set('showUploadModal', true)">
                         <x-lucide-upload class="size-4" />
-                        <span>Unggah Template .docx</span>
+                        <span>Unggah .docx</span>
+                    </x-ui.button>
+                    <x-ui.button size="sm" wire:click="$set('showCreateModal', true)">
+                        <x-lucide-file-pen-line class="size-4" />
+                        <span>Buat di OnlyOffice</span>
                     </x-ui.button>
                 @endif
             </div>
@@ -156,6 +160,23 @@
                                     </td>
                                     <td class="py-3 px-3 text-right whitespace-nowrap">
                                         <div class="inline-flex items-center gap-1.5">
+                                            @if (! $tpl->isGlobal() && $role?->canWrite())
+                                                <x-ui.button variant="outline" size="sm" :href="route('templates.edit', $tpl->id)" title="Edit Template &amp; Sisipkan Variabel di OnlyOffice">
+                                                    <x-lucide-file-pen-line class="size-3.5 text-blue-600 dark:text-blue-400" />
+                                                    <span>Edit</span>
+                                                </x-ui.button>
+                                            @elseif ($tpl->isGlobal() && auth()->user()?->is_super_admin)
+                                                <x-ui.button variant="outline" size="sm" :href="route('templates.edit', $tpl->id)" title="Edit Template Global di OnlyOffice">
+                                                    <x-lucide-file-pen-line class="size-3.5 text-blue-600 dark:text-blue-400" />
+                                                    <span>Edit</span>
+                                                </x-ui.button>
+                                            @else
+                                                <x-ui.button variant="ghost" size="sm" :href="route('templates.edit', $tpl->id)" title="Pratinjau Template di OnlyOffice">
+                                                    <x-lucide-eye class="size-3.5" />
+                                                    <span class="hidden sm:inline">Lihat</span>
+                                                </x-ui.button>
+                                            @endif
+
                                             <x-ui.button variant="ghost" size="sm" :href="route('templates.download', $tpl->id)" title="Unduh Master Word">
                                                 <x-lucide-download class="size-4" />
                                                 <span class="hidden sm:inline">.docx</span>
@@ -360,6 +381,126 @@
                                 Simpan Template
                             </x-ui.button>
                         </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    @endif
+
+    {{-- Modal Buat Template Baru Langsung di OnlyOffice --}}
+    @if ($showCreateModal)
+        <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 overflow-y-auto" role="dialog" aria-modal="true">
+            <div class="w-full max-w-xl rounded-xl border border-border bg-background p-6 shadow-xl my-8">
+                <div class="flex items-center justify-between border-b border-border pb-3">
+                    <div>
+                        <h3 class="text-base font-semibold">Buat Template Baru di OnlyOffice</h3>
+                        <p class="text-xs text-muted-foreground mt-0.5">
+                            Desain template surat langsung di browser lengkap dengan panel 1-klik variabel sistem &amp; kustom.
+                        </p>
+                    </div>
+                    <button type="button" wire:click="$set('showCreateModal', false)" class="text-muted-foreground hover:text-foreground cursor-pointer">
+                        <x-lucide-x class="size-4" />
+                    </button>
+                </div>
+
+                @if ($createError)
+                    <x-ui.alert variant="destructive" class="mt-3">
+                        {{ $createError }}
+                    </x-ui.alert>
+                @endif
+
+                <form wire:submit="createInOnlyOffice" class="mt-4 space-y-4">
+                    <div>
+                        <x-ui.label for="newTplName">Nama Template</x-ui.label>
+                        <x-ui.input id="newTplName" wire:model="newTemplateName" class="mt-1.5" placeholder="Mis. Surat Tugas Panitia / Surat Undangan Rapat" required />
+                        <x-ui.form-error for="newTemplateName" />
+                    </div>
+
+                    <div>
+                        <x-ui.label for="newTplDesc">Deskripsi Singkat (Opsional)</x-ui.label>
+                        <x-ui.input id="newTplDesc" wire:model="newTemplateDescription" class="mt-1.5" placeholder="Mis. Template surat undangan rapat koordinasi internal" />
+                    </div>
+
+                    <div class="space-y-2">
+                        <x-ui.label>Mulai Dari</x-ui.label>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                            <label
+                                @class([
+                                    'flex flex-col gap-1 rounded-lg border p-3 cursor-pointer transition-colors',
+                                    'border-primary bg-primary/5 ring-1 ring-primary' => $newStarterMode === 'starter',
+                                    'border-border hover:bg-muted/40' => $newStarterMode !== 'starter',
+                                ])
+                            >
+                                <div class="flex items-center gap-2">
+                                    <input type="radio" wire:model.live="newStarterMode" value="starter" class="text-primary focus:ring-primary" />
+                                    <span class="font-semibold text-foreground">Kerangka Surat Standar</span>
+                                </div>
+                                <p class="text-[11px] text-muted-foreground pl-5">
+                                    Sudah dilengkapi format surat resmi (Nomor, Lampiran, Perihal, Jadwal, &amp; <code class="font-mono">${signature_block}</code>) Times New Roman 12pt.
+                                </p>
+                            </label>
+
+                            <label
+                                @class([
+                                    'flex flex-col gap-1 rounded-lg border p-3 cursor-pointer transition-colors',
+                                    'border-primary bg-primary/5 ring-1 ring-primary' => $newStarterMode === 'blank',
+                                    'border-border hover:bg-muted/40' => $newStarterMode !== 'blank',
+                                ])
+                            >
+                                <div class="flex items-center gap-2">
+                                    <input type="radio" wire:model.live="newStarterMode" value="blank" class="text-primary focus:ring-primary" />
+                                    <span class="font-semibold text-foreground">Dokumen Kosong A4</span>
+                                </div>
+                                <p class="text-[11px] text-muted-foreground pl-5">
+                                    Halaman kosong A4 Times New Roman 12pt. Bebas ketik dan sisipkan variabel dari awal.
+                                </p>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="space-y-2">
+                        <x-ui.label>Mode Kop Surat</x-ui.label>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                            <label
+                                @class([
+                                    'flex flex-col gap-1 rounded-lg border p-3 cursor-pointer transition-colors',
+                                    'border-primary bg-primary/5 ring-1 ring-primary' => ! $newHasEmbeddedKop,
+                                    'border-border hover:bg-muted/40' => $newHasEmbeddedKop,
+                                ])
+                            >
+                                <div class="flex items-center gap-2">
+                                    <input type="radio" wire:model.live="newHasEmbeddedKop" value="0" class="text-primary focus:ring-primary" />
+                                    <span class="font-semibold text-foreground">Pakai Kop Resmi Workspace</span>
+                                </div>
+                                <p class="text-[11px] text-muted-foreground pl-5">
+                                    Kop surat disisipkan otomatis oleh sistem saat surat dibuat.
+                                </p>
+                            </label>
+
+                            <label
+                                @class([
+                                    'flex flex-col gap-1 rounded-lg border p-3 cursor-pointer transition-colors',
+                                    'border-primary bg-primary/5 ring-1 ring-primary' => $newHasEmbeddedKop,
+                                    'border-border hover:bg-muted/40' => ! $newHasEmbeddedKop,
+                                ])
+                            >
+                                <div class="flex items-center gap-2">
+                                    <input type="radio" wire:model.live="newHasEmbeddedKop" value="1" class="text-primary focus:ring-primary" />
+                                    <span class="font-semibold text-foreground">Desain Kop Sendiri di Word</span>
+                                </div>
+                                <p class="text-[11px] text-muted-foreground pl-5">
+                                    Anda akan mendesain header kop surat langsung di dokumen OnlyOffice.
+                                </p>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="flex justify-end gap-2 pt-2 border-t border-border">
+                        <x-ui.button type="button" variant="outline" wire:click="$set('showCreateModal', false)">Batal</x-ui.button>
+                        <x-ui.button type="submit" class="gap-1.5">
+                            <x-lucide-file-pen-line class="size-4" />
+                            <span>Buat &amp; Buka di OnlyOffice</span>
+                        </x-ui.button>
                     </div>
                 </form>
             </div>

@@ -183,4 +183,136 @@ class SampleDocxBuilder
         $writer = IOFactory::createWriter($phpWord, 'Word2007');
         $writer->save($targetAbsolutePath);
     }
+
+    /**
+     * Generates a clean starter organizational letter .docx using modern `${signature_block}`
+     * and Times New Roman 12pt, optimized for direct editing in OnlyOffice.
+     */
+    public static function createStarter(string $targetAbsolutePath): void
+    {
+        $dir = dirname($targetAbsolutePath);
+        if (! is_dir($dir)) {
+            mkdir($dir, 0775, true);
+        }
+
+        $phpWord = new PhpWord;
+        $phpWord->setDefaultFontName('Times New Roman');
+        $phpWord->setDefaultFontSize(12);
+
+        $section = $phpWord->addSection([
+            'pageSizeW' => 11906,
+            'pageSizeH' => 16838,
+            'marginTop' => 1440,
+            'marginBottom' => 1440,
+            'marginLeft' => 1440,
+            'marginRight' => 1440,
+        ]);
+
+        $section->addText('${kota_surat}, ${tanggal_surat}', [], [
+            'alignment' => Jc::END,
+            'spaceAfter' => 60,
+        ]);
+
+        $metaTable = $section->addTable([
+            'borderSize' => 0,
+            'borderColor' => 'FFFFFF',
+            'cellMarginTop' => 20,
+            'cellMarginBottom' => 20,
+            'cellMarginLeft' => 0,
+            'cellMarginRight' => 40,
+        ]);
+        $metaTable->addRow();
+        $metaTable->addCell(1500)->addText('Nomor', [], ['spaceAfter' => 20]);
+        $metaTable->addCell(220)->addText(':', [], ['spaceAfter' => 20]);
+        $metaTable->addCell(7300)->addText('${nomor_surat}', [], ['spaceAfter' => 20]);
+
+        $metaTable->addRow();
+        $metaTable->addCell(1500)->addText('Lampiran', [], ['spaceAfter' => 20]);
+        $metaTable->addCell(220)->addText(':', [], ['spaceAfter' => 20]);
+        $metaTable->addCell(7300)->addText('${jumlah_lampiran}', [], ['spaceAfter' => 20]);
+
+        $metaTable->addRow();
+        $metaTable->addCell(1500)->addText('Hal', [], ['spaceAfter' => 20]);
+        $metaTable->addCell(220)->addText(':', [], ['spaceAfter' => 20]);
+        $metaTable->addCell(7300)->addText('${perihal}', ['bold' => true, 'underline' => 'single'], ['spaceAfter' => 20]);
+
+        $section->addTextBreak(1);
+        $section->addText('Kepada Yth.', [], ['spaceAfter' => 40]);
+        $section->addText('${tujuan_surat}', ['bold' => true], ['spaceAfter' => 40]);
+        $section->addText('Di - Tempat', [], ['spaceAfter' => 160]);
+
+        $section->addText('Dengan hormat,', [], ['spaceAfter' => 80]);
+        $section->addText(
+            'Sehubungan dengan penyelenggaraan kegiatan ${nama_kegiatan}, kami bermaksud menyampaikan pemberitahuan/permohonan terkait kegiatan yang akan dilaksanakan pada:',
+            [],
+            ['alignment' => Jc::BOTH, 'lineHeight' => 1.5, 'spaceAfter' => 100]
+        );
+
+        $scheduleTable = $section->addTable([
+            'borderSize' => 0,
+            'borderColor' => 'FFFFFF',
+            'cellMarginTop' => 20,
+            'cellMarginBottom' => 20,
+            'cellMarginLeft' => 0,
+            'cellMarginRight' => 40,
+        ]);
+        $scheduleTable->addRow();
+        $scheduleTable->addCell(800)->addText('', [], ['spaceAfter' => 20]);
+        $scheduleTable->addCell(1800)->addText('Hari, Tanggal', [], ['spaceAfter' => 20]);
+        $scheduleTable->addCell(220)->addText(':', [], ['spaceAfter' => 20]);
+        $scheduleTable->addCell(6200)->addText('${hari_tanggal_kegiatan}, ${tanggal_kegiatan}', [], ['spaceAfter' => 20]);
+
+        $scheduleTable->addRow();
+        $scheduleTable->addCell(800)->addText('', [], ['spaceAfter' => 20]);
+        $scheduleTable->addCell(1800)->addText('Waktu', [], ['spaceAfter' => 20]);
+        $scheduleTable->addCell(220)->addText(':', [], ['spaceAfter' => 20]);
+        $scheduleTable->addCell(6200)->addText('${waktu_kegiatan}', [], ['spaceAfter' => 20]);
+
+        $scheduleTable->addRow();
+        $scheduleTable->addCell(800)->addText('', [], ['spaceAfter' => 20]);
+        $scheduleTable->addCell(1800)->addText('Tempat', [], ['spaceAfter' => 20]);
+        $scheduleTable->addCell(220)->addText(':', [], ['spaceAfter' => 20]);
+        $scheduleTable->addCell(6200)->addText('${tempat_kegiatan}', [], ['spaceAfter' => 20]);
+
+        $section->addText(
+            'Demikian surat ini kami sampaikan. Atas perhatian dan kerja samanya, kami ucapkan terima kasih.',
+            [],
+            ['alignment' => Jc::BOTH, 'lineHeight' => 1.5, 'spaceBefore' => 100, 'spaceAfter' => 200]
+        );
+
+        $section->addText('${signature_block}', [], ['spaceAfter' => 0]);
+
+        $writer = IOFactory::createWriter($phpWord, 'Word2007');
+        $writer->save($targetAbsolutePath);
+    }
+
+    /**
+     * Generates a clean blank A4 .docx (Times New Roman 12pt, 2.54 cm margins)
+     * for authoring a template completely from scratch in OnlyOffice.
+     */
+    public static function createBlank(string $targetAbsolutePath): void
+    {
+        $dir = dirname($targetAbsolutePath);
+        if (! is_dir($dir)) {
+            mkdir($dir, 0775, true);
+        }
+
+        $phpWord = new PhpWord;
+        $phpWord->setDefaultFontName('Times New Roman');
+        $phpWord->setDefaultFontSize(12);
+
+        $section = $phpWord->addSection([
+            'pageSizeW' => 11906,
+            'pageSizeH' => 16838,
+            'marginTop' => 1440,
+            'marginBottom' => 1440,
+            'marginLeft' => 1440,
+            'marginRight' => 1440,
+        ]);
+
+        $section->addText('', [], ['spaceAfter' => 0]);
+
+        $writer = IOFactory::createWriter($phpWord, 'Word2007');
+        $writer->save($targetAbsolutePath);
+    }
 }

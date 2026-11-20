@@ -7,6 +7,7 @@ use App\Exceptions\DomainException;
 use App\Models\LetterTemplate;
 use App\Models\User;
 use App\Models\Workspace;
+use App\Services\Documents\DocxRenderer;
 use App\Services\Templates\TemplateParser;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
@@ -16,6 +17,7 @@ class UploadTemplateAction
 {
     public function __construct(
         private readonly TemplateParser $parser,
+        private readonly DocxRenderer $docxRenderer,
     ) {}
 
     /**
@@ -61,6 +63,13 @@ class UploadTemplateAction
         $filename = Str::slug($name ?: 'template').'-'.Str::lower(Str::random(6)).'.docx';
         $storedPath = $file->storeAs($folder, $filename, 'local');
 
+        if ($storedPath !== false) {
+            $this->docxRenderer->sanitizeHeaderAndMarginsInDocx(
+                Storage::disk('local')->path($storedPath),
+                $hasEmbeddedKop
+            );
+        }
+
         return LetterTemplate::withoutGlobalScopes()->create([
             'workspace_id' => $scope === TemplateScope::Global ? null : $workspace->id,
             'scope' => $scope,
@@ -98,6 +107,13 @@ class UploadTemplateAction
         $nextVersion = ((int) $existing->version) + 1;
         $filename = Str::slug($existing->name)."-v{$nextVersion}-".Str::lower(Str::random(5)).'.docx';
         $storedPath = $file->storeAs($folder, $filename, 'local');
+
+        if ($storedPath !== false) {
+            $this->docxRenderer->sanitizeHeaderAndMarginsInDocx(
+                Storage::disk('local')->path($storedPath),
+                (bool) $existing->has_embedded_kop
+            );
+        }
 
         if ($deprecatePrevious) {
             $existing->forceFill(['is_deprecated' => true])->save();

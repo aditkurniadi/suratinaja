@@ -22,6 +22,9 @@ services:
       SESSION_DRIVER: database
       CACHE_STORE: database
       GOTENBERG_URL: "http://gotenberg:3000"
+      ONLYOFFICE_URL: "${ONLYOFFICE_URL}"
+      ONLYOFFICE_INTERNAL_URL: "${ONLYOFFICE_INTERNAL_URL:-http://onlyoffice:80}"
+      ONLYOFFICE_JWT_SECRET: "${ONLYOFFICE_JWT_SECRET}"
       SUPERADMIN_EMAIL: "${SUPERADMIN_EMAIL:-admin@organisasi.id}"
       SUPERADMIN_PASSWORD: "${SUPERADMIN_PASSWORD:-PasswordKuat123!}"
       AUTORUN_LARAVEL_MIGRATION: "false"
@@ -89,8 +92,29 @@ services:
     networks:
       - suratinaja-internal
 
+  onlyoffice:
+    image: onlyoffice/documentserver:latest
+    container_name: suratinaja-onlyoffice
+    restart: unless-stopped
+    mem_limit: 2048m
+    expose:
+      - "80"
+    environment:
+      - JWT_ENABLED=true
+      - JWT_SECRET=${ONLYOFFICE_JWT_SECRET:-suratinaja-onlyoffice-secret-key-12345}
+      - JWT_HEADER=Authorization
+      - USE_UNAUTHORIZED_STORAGE=true
+    volumes:
+      - onlyoffice-data:/var/www/onlyoffice/Data
+      - onlyoffice-log:/var/log/onlyoffice
+    networks:
+      - dokploy-network
+      - suratinaja-internal
+
 volumes:
   suratinaja-storage:
+  onlyoffice-data:
+  onlyoffice-log:
 
 networks:
   dokploy-network:

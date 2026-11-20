@@ -2,6 +2,7 @@
 
 namespace App\Livewire\Templates;
 
+use App\Actions\Templates\CreateBlankTemplateAction;
 use App\Actions\Templates\DuplicateTemplateAction;
 use App\Actions\Templates\UploadTemplateAction;
 use App\Enums\TemplateScope;
@@ -21,6 +22,18 @@ class TemplatesIndex extends Component
     public string $activeTab = 'workspace';
 
     public bool $showUploadModal = false;
+
+    public bool $showCreateModal = false;
+
+    public string $newTemplateName = '';
+
+    public string $newTemplateDescription = '';
+
+    public bool $newHasEmbeddedKop = false;
+
+    public string $newStarterMode = 'starter';
+
+    public ?string $createError = null;
 
     public bool $showGuideModal = false;
 
@@ -115,6 +128,41 @@ class TemplatesIndex extends Component
             'type' => 'success',
             'title' => 'Template berhasil diunggah',
         ]);
+    }
+
+    public function createInOnlyOffice(CreateBlankTemplateAction $action): void
+    {
+        $ws = app(CurrentWorkspace::class)->get();
+        if (! $ws || ! $ws->roleOf(auth()->user())?->canWrite()) {
+            abort(403);
+        }
+
+        $this->createError = null;
+        $this->validate([
+            'newTemplateName' => ['required', 'string', 'max:150'],
+            'newTemplateDescription' => ['nullable', 'string', 'max:500'],
+            'newHasEmbeddedKop' => ['boolean'],
+            'newStarterMode' => ['required', 'in:starter,blank'],
+        ]);
+
+        try {
+            $tpl = $action->execute(
+                $this->newTemplateName,
+                auth()->user(),
+                $ws,
+                TemplateScope::Workspace,
+                $this->newTemplateDescription ?: null,
+                $this->newHasEmbeddedKop,
+                $this->newStarterMode,
+            );
+        } catch (DomainException $e) {
+            $this->createError = $e->getMessage();
+
+            return;
+        }
+
+        $this->reset(['showCreateModal', 'newTemplateName', 'newTemplateDescription', 'newHasEmbeddedKop', 'newStarterMode', 'createError']);
+        $this->redirect(route('templates.edit', $tpl->id), navigate: false);
     }
 
     public function toggleEmbeddedKop(int $templateId): void

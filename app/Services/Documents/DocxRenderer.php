@@ -7,6 +7,9 @@ use App\Models\Letter;
 use App\Models\LetterTemplate;
 use App\Models\Workspace;
 use Carbon\Carbon;
+use DOMDocument;
+use DOMElement;
+use DOMXPath;
 use Illuminate\Support\Facades\Storage;
 use PhpOffice\PhpWord\Settings as PhpWordSettings;
 use PhpOffice\PhpWord\TemplateProcessor;
@@ -15,6 +18,12 @@ use ZipArchive;
 
 class DocxRenderer
 {
+    /**
+     * Number of single-spaced empty paragraphs inside each signature cell (~60-63pt / ~2.2 cm at 12pt)
+     * to provide comfortable wet signature & stamp clearance without requiring manual Enter presses.
+     */
+    private const SIGNATURE_BLANK_LINES = 4;
+
     public function __construct(
         private readonly KopInjector $kopInjector,
     ) {}
@@ -378,7 +387,7 @@ class DocxRenderer
 
     /**
      * Replaces the static 2-cell signature table or `${signature_block}` / `${tanda_tangan}` paragraph
-     * with a dynamic multi-tier signature table XML.
+     * with a dynamic multi-tier signature table XML that inherits the template placeholder's typography.
      *
      * @param  array<int, array{prefix?: string, position?: string, name?: string, id_label?: string, id_number?: string, layout?: string}>  $signers
      */
@@ -400,25 +409,353 @@ class DocxRenderer
             return;
         }
 
-        $tableXml = $this->buildSignatureTableXml($signers);
-        $newXml = null;
+        $pattern = null;
+        $matchedXml = null;
 
-        if (preg_match('/<w:tbl\b(?:(?!<\/w:tbl>).)*?ttd_kiri.*?<\/w:tbl>/s', $xml)) {
-            $newXml = preg_replace('/<w:tbl\b(?:(?!<\/w:tbl>).)*?ttd_kiri.*?<\/w:tbl>/s', $tableXml, $xml, 1);
-        } elseif (preg_match('/<w:p\b[^>]*>(?:(?!<\/w:p>).)*?(?:signature_block|tanda_tangan).*?<\/w:p>/s', $xml)) {
-            $newXml = preg_replace('/<w:p\b[^>]*>(?:(?!<\/w:p>).)*?(?:signature_block|tanda_tangan).*?<\/w:p>/s', $tableXml, $xml, 1);
+        if (preg_match('/<w:tbl\b(?:(?!<\/w:tbl>).)*?ttd_kiri.*?<\/w:tbl>/s', $xml, $match)) {
+            $pattern = '/<w:tbl\b(?:(?!<\/w:tbl>).)*?ttd_kiri.*?<\/w:tbl>/s';
+            $matchedXml = $match[0];
+        } elseif (preg_match('/<w:p\b[^>]*>(?:(?!<\/w:p>).)*?(?:signature_block|tanda_tangan).*?<\/w:p>/s', $xml, $match)) {
+            $pattern = '/<w:p\b[^>]*>(?:(?!<\/w:p>).)*?(?:signature_block|tanda_tangan).*?<\/w:p>/s';
+            $matchedXml = $match[0];
         }
 
-        if ($newXml !== null) {
-            $zip->addFromString('word/document.xml', $newXml);
+        if ($pattern !== null && $matchedXml !== null) {
+            $stylesXml = $zip->getFromName('word/styles.xml');
+            $fontStyle = $this->extractSignatureStyleFromTemplate(
+                $matchedXml,
+                $xml,
+                is_string($stylesXml) ? $stylesXml : null
+            );
+            $tableXml = $this->buildSignatureTableXml($signers, $fontStyle);
+            $newXml = preg_replace_callback($pattern, fn (): string => $tableXml, $xml, 1);
+
+            if ($newXml !== null) {
+                $zip->addFromString('word/document.xml', $newXml);
+            }
         }
         $zip->close();
     }
 
     /**
-     * @param  array<int, array{prefix?: string, position?: string, name?: string, id_label?: string, id_number?: string, layout?: string}>  $signers
+     * Extracts effective typography (rFonts, sz, szCs, color, lang) from the matched
+     * signature placeholder block following the OOXML style inheritance hierarchy:
+     *   1. Direct run <w:rPr> on the placeholder run
+     *   2. Character style (<w:rStyle>) + <w:basedOn> chain in styles.xml
+     *   3. Paragraph default <w:pPr>/<w:rPr>
+     *   4. Paragraph style (<w:pStyle>) + <w:basedOn> chain in styles.xml
+     *   5. Default paragraph style (w:type="paragraph" w:default="1") in styles.xml
+     *   6. Document defaults (<w:docDefaults>/<w:rPrDefault>/<w:rPr>) in styles.xml
+     *
+     * @return array{rFonts?: string, sz?: string, szCs?: string, color?: string, lang?: string}
      */
-    private function buildSignatureTableXml(array $signers): string
+    private function extractSignatureStyleFromTemplate(
+        string $matchedBlockXml,
+        string $fullDocumentXml,
+        ?string $stylesXml,
+    ): array {
+        $wNs = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+
+        $docOpenTag = '<w:document xmlns:w="'.$wNs.'">';
+        if (preg_match('/<w:document\b[^>]*>/', $fullDocumentXml, $docOpenMatch)) {
+            $docOpenTag = $docOpenMatch[0];
+        }
+
+        $docDom = new DOMDocument;
+        $prevUseErrors = libxml_use_internal_errors(true);
+        $loadedDoc = $docDom->loadXML($docOpenTag.'<w:body>'.$matchedBlockXml.'</w:body></w:document>', LIBXML_NONET);
+        libxml_clear_errors();
+
+        if (! $loadedDoc) {
+            libxml_use_internal_errors($prevUseErrors);
+
+            return [];
+        }
+
+        $docXpath = new DOMXPath($docDom);
+        $docXpath->registerNamespace('w', $wNs);
+
+        // Locate target <w:p> containing the signature placeholder (or first <w:p> as fallback)
+        $targetParagraph = null;
+        $paragraphs = $docXpath->query('//w:p');
+        if ($paragraphs !== false) {
+            foreach ($paragraphs as $pNode) {
+                if (! $pNode instanceof DOMElement) {
+                    continue;
+                }
+                if (preg_match('/signature_block|tanda_tangan|ttd_kiri_jabatan|ttd_kiri/i', $pNode->textContent)) {
+                    $targetParagraph = $pNode;
+                    break;
+                }
+            }
+            if ($targetParagraph === null && $paragraphs->length > 0 && $paragraphs->item(0) instanceof DOMElement) {
+                $targetParagraph = $paragraphs->item(0);
+            }
+        }
+
+        // Parse word/styles.xml if present
+        $stylesById = [];
+        $defaultParagraphStyleId = null;
+        $docDefaultsRPr = null;
+
+        if ($stylesXml !== null && $stylesXml !== '') {
+            $stylesDom = new DOMDocument;
+            $loadedStyles = $stylesDom->loadXML($stylesXml, LIBXML_NONET);
+            libxml_clear_errors();
+
+            if ($loadedStyles) {
+                $stylesXpath = new DOMXPath($stylesDom);
+                $stylesXpath->registerNamespace('w', $wNs);
+
+                $styleNodes = $stylesXpath->query('/w:styles/w:style');
+                if ($styleNodes !== false) {
+                    foreach ($styleNodes as $styleNode) {
+                        if (! $styleNode instanceof DOMElement) {
+                            continue;
+                        }
+                        $styleId = $styleNode->getAttributeNS($wNs, 'styleId') ?: $styleNode->getAttribute('w:styleId');
+                        if ($styleId === '') {
+                            continue;
+                        }
+                        $stylesById[$styleId] = $styleNode;
+
+                        $styleType = $styleNode->getAttributeNS($wNs, 'type') ?: $styleNode->getAttribute('w:type');
+                        $isDefault = $styleNode->getAttributeNS($wNs, 'default') ?: $styleNode->getAttribute('w:default');
+                        if ($styleType === 'paragraph' && ($isDefault === '1' || strtolower($isDefault) === 'true')) {
+                            $defaultParagraphStyleId = $styleId;
+                        }
+                    }
+                }
+
+                $docDefNodes = $stylesXpath->query('/w:styles/w:docDefaults/w:rPrDefault/w:rPr');
+                if ($docDefNodes !== false && $docDefNodes->length > 0 && $docDefNodes->item(0) instanceof DOMElement) {
+                    $docDefaultsRPr = $docDefNodes->item(0);
+                }
+            }
+        }
+
+        libxml_use_internal_errors($prevUseErrors);
+
+        /** @var array<int, DOMElement> $rPrChain */
+        $rPrChain = [];
+
+        $appendStyleChain = function (?string $startStyleId) use (&$rPrChain, $stylesById, $wNs): void {
+            $visited = [];
+            $currentId = $startStyleId;
+            $depth = 0;
+
+            while ($currentId !== null && $currentId !== '' && ! isset($visited[$currentId]) && $depth < 10) {
+                $visited[$currentId] = true;
+                $depth++;
+
+                $styleEl = $stylesById[$currentId] ?? null;
+                if (! $styleEl instanceof DOMElement) {
+                    break;
+                }
+
+                foreach ($styleEl->childNodes as $child) {
+                    if ($child instanceof DOMElement && $child->localName === 'rPr' && $child->namespaceURI === $wNs) {
+                        $rPrChain[] = $child;
+                        break;
+                    }
+                }
+
+                $nextId = null;
+                foreach ($styleEl->childNodes as $child) {
+                    if ($child instanceof DOMElement && $child->localName === 'basedOn' && $child->namespaceURI === $wNs) {
+                        $nextId = $child->getAttributeNS($wNs, 'val') ?: $child->getAttribute('w:val');
+                        break;
+                    }
+                }
+                $currentId = ($nextId !== null && $nextId !== '') ? $nextId : null;
+            }
+        };
+
+        $pStyleId = null;
+        if ($targetParagraph instanceof DOMElement) {
+            // 1. Direct run <w:rPr> from the run containing the placeholder token (or first non-empty text run)
+            $targetRun = null;
+            $firstTextRun = null;
+            $runNodes = $docXpath->query('./w:r', $targetParagraph);
+            if ($runNodes !== false) {
+                foreach ($runNodes as $rNode) {
+                    if (! $rNode instanceof DOMElement) {
+                        continue;
+                    }
+                    $runText = $rNode->textContent;
+                    if ($firstTextRun === null && trim($runText) !== '') {
+                        $firstTextRun = $rNode;
+                    }
+                    if (preg_match('/signature_block|tanda_tangan|ttd_kiri/i', $runText)) {
+                        $targetRun = $rNode;
+                        break;
+                    }
+                }
+            }
+            $targetRun ??= $firstTextRun;
+
+            $rStyleId = null;
+            if ($targetRun instanceof DOMElement) {
+                $runRPrNodes = $docXpath->query('./w:rPr', $targetRun);
+                if ($runRPrNodes !== false && $runRPrNodes->length > 0 && $runRPrNodes->item(0) instanceof DOMElement) {
+                    $runRPr = $runRPrNodes->item(0);
+                    $rPrChain[] = $runRPr;
+
+                    $rStyleNodes = $docXpath->query('./w:rStyle', $runRPr);
+                    if ($rStyleNodes !== false && $rStyleNodes->length > 0 && $rStyleNodes->item(0) instanceof DOMElement) {
+                        $rStyleVal = $rStyleNodes->item(0)->getAttributeNS($wNs, 'val') ?: $rStyleNodes->item(0)->getAttribute('w:val');
+                        if ($rStyleVal !== '') {
+                            $rStyleId = $rStyleVal;
+                        }
+                    }
+                }
+            }
+
+            // 2. Character style (<w:rStyle>) + basedOn chain
+            if ($rStyleId !== null) {
+                $appendStyleChain($rStyleId);
+            }
+
+            // 3. Paragraph-level <w:pPr>/<w:rPr> and <w:pStyle>
+            $pPrNodes = $docXpath->query('./w:pPr', $targetParagraph);
+            if ($pPrNodes !== false && $pPrNodes->length > 0 && $pPrNodes->item(0) instanceof DOMElement) {
+                $pPrEl = $pPrNodes->item(0);
+
+                $pRPrNodes = $docXpath->query('./w:rPr', $pPrEl);
+                if ($pRPrNodes !== false && $pRPrNodes->length > 0 && $pRPrNodes->item(0) instanceof DOMElement) {
+                    $rPrChain[] = $pRPrNodes->item(0);
+                }
+
+                $pStyleNodes = $docXpath->query('./w:pStyle', $pPrEl);
+                if ($pStyleNodes !== false && $pStyleNodes->length > 0 && $pStyleNodes->item(0) instanceof DOMElement) {
+                    $val = $pStyleNodes->item(0)->getAttributeNS($wNs, 'val') ?: $pStyleNodes->item(0)->getAttribute('w:val');
+                    if ($val !== '') {
+                        $pStyleId = $val;
+                    }
+                }
+            }
+        }
+
+        // 4 & 5. Paragraph style (<w:pStyle>) or default paragraph style (Normal) + basedOn chain
+        $appendStyleChain($pStyleId ?? $defaultParagraphStyleId);
+
+        // 6. Document defaults (<w:docDefaults>/<w:rPrDefault>/<w:rPr>)
+        if ($docDefaultsRPr instanceof DOMElement) {
+            $rPrChain[] = $docDefaultsRPr;
+        }
+
+        // Resolve each typography property from highest to lowest priority
+        $resolved = [];
+
+        foreach ($rPrChain as $rPrEl) {
+            foreach ($rPrEl->childNodes as $child) {
+                if (! $child instanceof DOMElement || $child->namespaceURI !== $wNs) {
+                    continue;
+                }
+
+                if ($child->localName === 'rFonts' && ! isset($resolved['rFonts'])) {
+                    $ascii = $child->getAttributeNS($wNs, 'ascii') ?: $child->getAttribute('w:ascii');
+                    $hAnsi = $child->getAttributeNS($wNs, 'hAnsi') ?: $child->getAttribute('w:hAnsi');
+                    $cs = $child->getAttributeNS($wNs, 'cs') ?: $child->getAttribute('w:cs');
+                    $eastAsia = $child->getAttributeNS($wNs, 'eastAsia') ?: $child->getAttribute('w:eastAsia');
+
+                    // Require Latin font (ascii or hAnsi) so a lone w:cs run doesn't hijack inherited Latin font
+                    $primaryFont = $ascii !== '' ? $ascii : $hAnsi;
+                    if ($primaryFont !== '') {
+                        $asciiVal = htmlspecialchars($ascii !== '' ? $ascii : $primaryFont, ENT_XML1, 'UTF-8');
+                        $hAnsiVal = htmlspecialchars($hAnsi !== '' ? $hAnsi : $primaryFont, ENT_XML1, 'UTF-8');
+                        $csVal = htmlspecialchars($cs !== '' ? $cs : $primaryFont, ENT_XML1, 'UTF-8');
+                        $eastAsiaVal = htmlspecialchars($eastAsia !== '' ? $eastAsia : $primaryFont, ENT_XML1, 'UTF-8');
+                        $resolved['rFonts'] = '<w:rFonts w:ascii="'.$asciiVal.'" w:hAnsi="'.$hAnsiVal.'" w:cs="'.$csVal.'" w:eastAsia="'.$eastAsiaVal.'"/>';
+                    } else {
+                        $themeAttrs = [];
+                        foreach (['asciiTheme', 'hAnsiTheme', 'eastAsiaTheme', 'cstheme'] as $tAttr) {
+                            $tVal = $child->getAttributeNS($wNs, $tAttr) ?: $child->getAttribute('w:'.$tAttr);
+                            if ($tVal !== '') {
+                                $themeAttrs[] = 'w:'.$tAttr.'="'.htmlspecialchars($tVal, ENT_XML1, 'UTF-8').'"';
+                            }
+                        }
+                        if ($themeAttrs !== []) {
+                            $resolved['rFonts'] = '<w:rFonts '.implode(' ', $themeAttrs).'/>';
+                        }
+                    }
+                } elseif ($child->localName === 'sz' && ! isset($resolved['sz'])) {
+                    $szVal = $child->getAttributeNS($wNs, 'val') ?: $child->getAttribute('w:val');
+                    if ($szVal !== '' && ctype_digit($szVal)) {
+                        $resolved['sz'] = $szVal;
+                    }
+                } elseif ($child->localName === 'szCs' && ! isset($resolved['szCs'])) {
+                    $szCsVal = $child->getAttributeNS($wNs, 'val') ?: $child->getAttribute('w:val');
+                    if ($szCsVal !== '' && ctype_digit($szCsVal)) {
+                        $resolved['szCs'] = $szCsVal;
+                    }
+                } elseif ($child->localName === 'color' && ! isset($resolved['color'])) {
+                    $colorVal = $child->getAttributeNS($wNs, 'val') ?: $child->getAttribute('w:val');
+                    if ($colorVal !== '' && strtolower($colorVal) !== 'auto') {
+                        $resolved['color'] = $colorVal;
+                    }
+                } elseif ($child->localName === 'lang' && ! isset($resolved['lang'])) {
+                    $langAttrs = [];
+                    foreach (['val', 'eastAsia', 'bidi'] as $lAttr) {
+                        $lVal = $child->getAttributeNS($wNs, $lAttr) ?: $child->getAttribute('w:'.$lAttr);
+                        if ($lVal !== '') {
+                            $langAttrs[] = 'w:'.$lAttr.'="'.htmlspecialchars($lVal, ENT_XML1, 'UTF-8').'"';
+                        }
+                    }
+                    if ($langAttrs !== []) {
+                        $resolved['lang'] = '<w:lang '.implode(' ', $langAttrs).'/>';
+                    }
+                }
+            }
+
+            // Prevent lower-priority styles (e.g. Normal szCs=22) from leaking when a higher-priority level sets sz without szCs
+            if (isset($resolved['sz']) && ! isset($resolved['szCs'])) {
+                $resolved['szCs'] = $resolved['sz'];
+            }
+        }
+
+        return $resolved;
+    }
+
+    /**
+     * Builds an ECMA-376 schema-ordered <w:rPr> XML string from resolved template typography.
+     *
+     * @param  array{rFonts?: string, sz?: string, szCs?: string, color?: string, lang?: string}  $fontStyle
+     */
+    private function buildSignatureRunPrXml(array $fontStyle, bool $bold = false, bool $underline = false): string
+    {
+        $parts = '';
+
+        if (! empty($fontStyle['rFonts'])) {
+            $parts .= $fontStyle['rFonts'];
+        }
+        if ($bold) {
+            $parts .= '<w:b/><w:bCs/>';
+        }
+        if (! empty($fontStyle['color'])) {
+            $parts .= '<w:color w:val="'.htmlspecialchars($fontStyle['color'], ENT_XML1, 'UTF-8').'"/>';
+        }
+        if (! empty($fontStyle['sz'])) {
+            $parts .= '<w:sz w:val="'.htmlspecialchars($fontStyle['sz'], ENT_XML1, 'UTF-8').'"/>';
+        }
+        if (! empty($fontStyle['szCs'])) {
+            $parts .= '<w:szCs w:val="'.htmlspecialchars($fontStyle['szCs'], ENT_XML1, 'UTF-8').'"/>';
+        }
+        if ($underline) {
+            $parts .= '<w:u w:val="single"/>';
+        }
+        if (! empty($fontStyle['lang'])) {
+            $parts .= $fontStyle['lang'];
+        }
+
+        return $parts !== '' ? '<w:rPr>'.$parts.'</w:rPr>' : '<w:rPr/>';
+    }
+
+    /**
+     * @param  array<int, array{prefix?: string, position?: string, name?: string, id_label?: string, id_number?: string, layout?: string}>  $signers
+     * @param  array{rFonts?: string, sz?: string, szCs?: string, color?: string, lang?: string}  $fontStyle
+     */
+    private function buildSignatureTableXml(array $signers, array $fontStyle = []): string
     {
         $rows = [];
         $curr = 0;
@@ -438,11 +775,15 @@ class DocxRenderer
             }
         }
 
+        $baseRPr = $this->buildSignatureRunPrXml($fontStyle);
+        $pPrRPr = $baseRPr !== '<w:rPr/>' ? $baseRPr : '';
         $currentTableRowsXml = '';
+        $rowCount = count($rows);
 
-        foreach ($rows as $rowMeta) {
+        foreach ($rows as $rowIndex => $rowMeta) {
             $rType = $rowMeta['type'];
             $rSigners = $rowMeta['signers'];
+            $hasNextRow = $rowIndex < ($rowCount - 1);
 
             $currentTableRowsXml .= '<w:tr><w:trPr><w:cantSplit/></w:trPr>';
 
@@ -453,8 +794,8 @@ class DocxRenderer
                 $name = trim((string) ($s['name'] ?? ''));
                 $idLine = trim(($s['id_label'] ?? '').' '.($s['id_number'] ?? ''));
 
-                $currentTableRowsXml .= '<w:tc><w:tcPr><w:tcW w:w="4510" w:type="dxa"/><w:noWrap/></w:tcPr><w:p><w:pPr><w:spacing w:after="0"/></w:pPr></w:p></w:tc>';
-                $currentTableRowsXml .= $this->buildDocxSignerCellXml(4510, $prefix, $pos, $name, $idLine);
+                $currentTableRowsXml .= '<w:tc><w:tcPr><w:tcW w:w="4510" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="auto"/>'.$pPrRPr.'</w:pPr></w:p></w:tc>';
+                $currentTableRowsXml .= $this->buildDocxSignerCellXml(4510, $prefix, $pos, $name, $idLine, 1, $fontStyle, false, $hasNextRow);
             } elseif ($rType === 'center') {
                 $s = $rSigners[0];
                 $prefix = trim((string) ($s['prefix'] ?? ''));
@@ -462,7 +803,7 @@ class DocxRenderer
                 $name = trim((string) ($s['name'] ?? ''));
                 $idLine = trim(($s['id_label'] ?? '').' '.($s['id_number'] ?? ''));
 
-                $currentTableRowsXml .= $this->buildDocxSignerCellXml(9020, $prefix, $pos, $name, $idLine, 2);
+                $currentTableRowsXml .= $this->buildDocxSignerCellXml(9020, $prefix, $pos, $name, $idLine, 2, $fontStyle, false, $hasNextRow);
             } else {
                 $sLeft = $rSigners[0];
                 $sRight = $rSigners[1];
@@ -477,8 +818,10 @@ class DocxRenderer
                 $nameRight = trim((string) ($sRight['name'] ?? ''));
                 $idLineRight = trim(($sRight['id_label'] ?? '').' '.($sRight['id_number'] ?? ''));
 
-                $currentTableRowsXml .= $this->buildDocxSignerCellXml(4510, $prefixLeft, $posLeft, $nameLeft, $idLineLeft);
-                $currentTableRowsXml .= $this->buildDocxSignerCellXml(4510, $prefixRight, $posRight, $nameRight, $idLineRight);
+                $rowHasPrefix = $prefixLeft !== '' || $prefixRight !== '';
+
+                $currentTableRowsXml .= $this->buildDocxSignerCellXml(4510, $prefixLeft, $posLeft, $nameLeft, $idLineLeft, 1, $fontStyle, $rowHasPrefix, $hasNextRow);
+                $currentTableRowsXml .= $this->buildDocxSignerCellXml(4510, $prefixRight, $posRight, $nameRight, $idLineRight, 1, $fontStyle, $rowHasPrefix, $hasNextRow);
             }
 
             $currentTableRowsXml .= '</w:tr>';
@@ -503,8 +846,20 @@ class DocxRenderer
             .'</w:tbl>';
     }
 
-    private function buildDocxSignerCellXml(int $width, string $prefix, string $pos, string $name, string $idLine, int $gridSpan = 1): string
-    {
+    /**
+     * @param  array{rFonts?: string, sz?: string, szCs?: string, color?: string, lang?: string}  $fontStyle
+     */
+    private function buildDocxSignerCellXml(
+        int $width,
+        string $prefix,
+        string $pos,
+        string $name,
+        string $idLine,
+        int $gridSpan = 1,
+        array $fontStyle = [],
+        bool $reservePrefixSlot = false,
+        bool $hasNextRow = false,
+    ): string {
         $prefixEsc = htmlspecialchars($prefix, ENT_XML1, 'UTF-8');
         $posEsc = htmlspecialchars($pos, ENT_XML1, 'UTF-8');
         $nameEsc = htmlspecialchars($name, ENT_XML1, 'UTF-8');
@@ -512,20 +867,35 @@ class DocxRenderer
 
         $gridSpanXml = $gridSpan > 1 ? '<w:gridSpan w:val="'.$gridSpan.'"/>' : '';
 
-        $prefixP = $prefix !== ''
-            ? '<w:p><w:pPr><w:jc w:val="center"/><w:spacing w:after="40"/></w:pPr><w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">'.$prefixEsc.'</w:t></w:r></w:p>'
-            : '';
+        $regularRPr = $this->buildSignatureRunPrXml($fontStyle);
+        $boldRPr = $this->buildSignatureRunPrXml($fontStyle, bold: true);
+        $underlineRPr = $this->buildSignatureRunPrXml($fontStyle, underline: true);
+        $pPrRPr = $regularRPr !== '<w:rPr/>' ? $regularRPr : '';
 
-        $posP = '<w:p><w:pPr><w:jc w:val="center"/><w:spacing w:after="1240"/></w:pPr><w:r><w:rPr/><w:t xml:space="preserve">'.$posEsc.'</w:t></w:r></w:p>';
+        if ($prefix !== '') {
+            $prefixP = '<w:p><w:pPr><w:spacing w:before="0" w:after="40" w:line="240" w:lineRule="auto"/><w:jc w:val="center"/>'.$pPrRPr.'</w:pPr><w:r>'.$boldRPr.'<w:t xml:space="preserve">'.$prefixEsc.'</w:t></w:r></w:p>';
+        } elseif ($reservePrefixSlot) {
+            $prefixP = '<w:p><w:pPr><w:spacing w:before="0" w:after="40" w:line="240" w:lineRule="auto"/><w:jc w:val="center"/>'.$pPrRPr.'</w:pPr></w:p>';
+        } else {
+            $prefixP = '';
+        }
 
-        $nameP = '<w:p><w:pPr><w:jc w:val="center"/><w:spacing w:after="20"/></w:pPr><w:r><w:rPr><w:u w:val="single"/></w:rPr><w:t xml:space="preserve">'.$nameEsc.'</w:t></w:r></w:p>';
+        $posP = '<w:p><w:pPr><w:spacing w:before="0" w:after="60" w:line="240" w:lineRule="auto"/><w:jc w:val="center"/>'.$pPrRPr.'</w:pPr><w:r>'.$regularRPr.'<w:t xml:space="preserve">'.$posEsc.'</w:t></w:r></w:p>';
+
+        $sigBlankLine = '<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="auto"/><w:jc w:val="center"/>'.$pPrRPr.'</w:pPr></w:p>';
+        $sigSpaceXml = str_repeat($sigBlankLine, self::SIGNATURE_BLANK_LINES);
+
+        $bottomAfter = $hasNextRow ? '200' : '80';
+        $nameAfter = $idLine !== '' ? '20' : $bottomAfter;
+
+        $nameP = '<w:p><w:pPr><w:spacing w:before="0" w:after="'.$nameAfter.'" w:line="240" w:lineRule="auto"/><w:jc w:val="center"/>'.$pPrRPr.'</w:pPr><w:r>'.$underlineRPr.'<w:t xml:space="preserve">'.$nameEsc.'</w:t></w:r></w:p>';
 
         $idP = $idLine !== ''
-            ? '<w:p><w:pPr><w:jc w:val="center"/><w:spacing w:after="200"/></w:pPr><w:r><w:rPr/><w:t xml:space="preserve">'.$idLineEsc.'</w:t></w:r></w:p>'
+            ? '<w:p><w:pPr><w:spacing w:before="0" w:after="'.$bottomAfter.'" w:line="240" w:lineRule="auto"/><w:jc w:val="center"/>'.$pPrRPr.'</w:pPr><w:r>'.$regularRPr.'<w:t xml:space="preserve">'.$idLineEsc.'</w:t></w:r></w:p>'
             : '';
 
-        return '<w:tc><w:tcPr><w:tcW w:w="'.$width.'" w:type="dxa"/>'.$gridSpanXml.'<w:noWrap/><w:vAlign w:val="top"/></w:tcPr>'
-            .$prefixP.$posP.$nameP.$idP
+        return '<w:tc><w:tcPr><w:tcW w:w="'.$width.'" w:type="dxa"/>'.$gridSpanXml.'<w:vAlign w:val="top"/></w:tcPr>'
+            .$prefixP.$posP.$sigSpaceXml.$nameP.$idP
             .'</w:tc>';
     }
 
@@ -598,13 +968,6 @@ class DocxRenderer
                 );
             }
 
-            // Normalize legacy template page margins (1134/1418 twips) to standard Word "Normal" margin (1440 twips = 2.54 cm / 1 inch)
-            $cleaned = str_replace(
-                'w:top="1134" w:right="1134" w:bottom="1134" w:left="1418"',
-                'w:top="1440" w:right="1440" w:bottom="1440" w:left="1440"',
-                $cleaned
-            );
-
             $zip->addFromString('word/document.xml', $cleaned);
         }
         $zip->close();
@@ -655,9 +1018,250 @@ class DocxRenderer
     }
 
     /**
-     * Ensures clean page break before the Lampiran section in DOCX XML:
-     * 1. Strips any trailing empty paragraphs and standalone <w:br w:type="page"/> between the signature table and Lampiran.
-     * 2. Injects <w:pageBreakBefore/> on the Lampiran paragraph or ensures Page 2 Kop starts with <w:pageBreakBefore/>.
+     * Returns true if the .docx contains at least one non-empty Word header (word/header*.xml)
+     * with a table, drawing, image, or text content.
+     */
+    public function hasWordHeader(string $docxPath): bool
+    {
+        $zip = new ZipArchive;
+        if ($zip->open($docxPath) !== true) {
+            return false;
+        }
+
+        $found = false;
+        for ($i = 0; $i < $zip->numFiles; $i++) {
+            $name = $zip->getNameIndex($i);
+            if (is_string($name) && preg_match('/^word\/header\d+\.xml$/', $name)) {
+                $hXml = $zip->getFromName($name);
+                if ($hXml !== false && strlen($hXml) >= 50 && preg_match('/<(?:w:tbl|w:drawing|w:pict|w:t)\b/i', $hXml)) {
+                    $found = true;
+                    break;
+                }
+            }
+        }
+
+        $zip->close();
+
+        return $found;
+    }
+
+    /**
+     * Template-level header and top-margin sanitizer (called once on template upload or opt-in
+     * from the Template Editor, NEVER during letter generation so Template == Letter 1:1):
+     * 1. Operates ONLY when the .docx actually contains a non-empty word/header*.xml
+     *    (Workspace-Kop templates without header XML are never modified).
+     * 2. For table-based headers (<w:tbl>): strips <w:tblpPr>, converts <wp:anchor> to <wp:inline>,
+     *    and ensures spacing after the last header paragraph.
+     * 3. For floating/freeform headers (without <w:tbl>): preserves <wp:anchor> coordinates and
+     *    leaves header*.xml untouched while measuring max vertical page offset (EMU) to compute safe w:top.
+     * 4. In word/document.xml: when $hasKop is true, raises w:top to at least 2550 twips (or measured
+     *    floating header height + 160 twips) and sets w:header="567" — UNLESS !$force and the first
+     *    body paragraph P[0] already has manual leading spacing (blank paragraph or leading <w:br/>).
+     *    Never overwrites w:bottom and never removes empty paragraphs before <w:tbl>.
+     */
+    public function sanitizeHeaderAndMarginsInDocx(string $docxPath, bool $hasKop = true, bool $force = false): bool
+    {
+        $zip = new ZipArchive;
+        if ($zip->open($docxPath) !== true) {
+            return false;
+        }
+
+        $minRequiredTopTwips = 2550;
+        $hasNonEmptyHeader = false;
+        $modified = false;
+
+        // 1. Inspect all word/header*.xml files
+        for ($i = 0; $i < $zip->numFiles; $i++) {
+            $name = $zip->getNameIndex($i);
+            if (! is_string($name) || ! preg_match('/^word\/header\d+\.xml$/', $name)) {
+                continue;
+            }
+
+            $hXml = $zip->getFromName($name);
+            if ($hXml === false || strlen($hXml) < 50 || ! preg_match('/<(?:w:tbl|w:drawing|w:pict|w:t)\b/i', $hXml)) {
+                continue;
+            }
+
+            $hasNonEmptyHeader = true;
+            $originalHXml = $hXml;
+            $hasHeaderTable = str_contains($hXml, '<w:tbl');
+
+            if ($hasHeaderTable) {
+                // Strip w:tblpPr from all tables in header
+                $hXml = preg_replace('/<w:tblpPr\b[^>]*\/?>/is', '', $hXml) ?? $hXml;
+
+                // Convert wp:anchor inside table-based headers to wp:inline
+                $hXml = preg_replace_callback('/<wp:anchor\b[^>]*>(.*?)<\/wp:anchor>/s', function (array $m): string {
+                    $inner = $m[1];
+                    preg_match('/<wp:extent\b[^>]*\/>/is', $inner, $ext);
+                    preg_match('/<wp:effectExtent\b[^>]*\/>/is', $inner, $eff);
+                    preg_match('/<wp:docPr\b[^>]*\/>/is', $inner, $docPr);
+                    preg_match('/<wp:cNvGraphicFramePr\b[^>]*>.*?<\/wp:cNvGraphicFramePr>/is', $inner, $cNv);
+                    preg_match('/<a:graphic\b[^>]*>.*?<\/a:graphic>/is', $inner, $graph);
+
+                    return '<wp:inline distT="0" distB="0" distL="0" distR="0">'
+                        .($ext[0] ?? '')
+                        .($eff[0] ?? '<wp:effectExtent l="0" t="0" r="0" b="0"/>')
+                        .($docPr[0] ?? '')
+                        .($cNv[0] ?? '')
+                        .($graph[0] ?? '')
+                        .'</wp:inline>';
+                }, $hXml) ?? $hXml;
+
+                // Ensure the last paragraph in table-based headers has spacing after
+                $hXml = preg_replace_callback('/<w:p\b([^>]*)>(?!.*<w:p\b)(.*?)<\/w:p>/s', function (array $m): string {
+                    $pAttrs = $m[1];
+                    $pContent = $m[2];
+                    if (preg_match('/<w:pPr\b[^>]*>/is', $pContent)) {
+                        if (preg_match('/<w:spacing\b[^>]*\/?>/is', $pContent)) {
+                            $pContent = preg_replace('/<w:spacing\b[^>]*\/?>/is', '<w:spacing w:before="0" w:after="200" w:line="240" w:lineRule="auto"/>', $pContent);
+                        } else {
+                            $pContent = preg_replace('/(<w:pPr\b[^>]*>)/is', '$1<w:spacing w:before="0" w:after="200" w:line="240" w:lineRule="auto"/>', $pContent);
+                        }
+                    } else {
+                        $pContent = '<w:pPr><w:spacing w:before="0" w:after="200" w:line="240" w:lineRule="auto"/></w:pPr>'.$pContent;
+                    }
+
+                    return '<w:p'.$pAttrs.'>'.$pContent.'</w:p>';
+                }, $hXml) ?? $hXml;
+
+                if ($hXml !== $originalHXml) {
+                    $zip->addFromString($name, $hXml);
+                    $modified = true;
+                }
+            } else {
+                // Floating header without <w:tbl>: preserve <wp:anchor> & header XML untouched,
+                // and measure max vertical posOffset to determine safe body w:top margin.
+                if (preg_match_all('/<wp:positionV\b[^>]*relativeFrom="page"[^>]*>\s*<wp:posOffset>(\d+)<\/wp:posOffset>/is', $hXml, $posMatches)) {
+                    foreach ($posMatches[1] as $emuStr) {
+                        $emu = (int) $emuStr;
+                        // 1 twip = 635 EMU; add 160 twips (~8pt) breathing room below the bottom divider line
+                        $neededTwips = (int) ceil($emu / 635) + 160;
+                        if ($neededTwips > $minRequiredTopTwips && $neededTwips <= 4000) {
+                            $minRequiredTopTwips = $neededTwips;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (! $hasNonEmptyHeader) {
+            $zip->close();
+
+            return false;
+        }
+
+        // 2. Align w:top and w:header in word/document.xml when applicable
+        $docXml = $zip->getFromName('word/document.xml');
+        if ($docXml !== false && $hasKop) {
+            $skipMarginBump = ! $force && $this->firstBodyParagraphHasLeadingSpacing($docXml);
+
+            if (! $skipMarginBump) {
+                $updatedDocXml = preg_replace_callback('/<w:pgMar\b([^>]*)\/>/is', function (array $m) use ($minRequiredTopTwips): string {
+                    $attrs = $m[1];
+                    if (preg_match('/w:top="([^"]*)"/', $attrs, $topM)) {
+                        $currentTop = (int) $topM[1];
+                        if ($currentTop < $minRequiredTopTwips) {
+                            $attrs = preg_replace('/w:top="[^"]*"/', 'w:top="'.$minRequiredTopTwips.'"', $attrs) ?? $attrs;
+                        }
+                    } else {
+                        $attrs .= ' w:top="'.$minRequiredTopTwips.'"';
+                    }
+
+                    // Ensure w:header is compact (567 twips = 1.0 cm)
+                    if (str_contains($attrs, 'w:header=')) {
+                        $attrs = preg_replace('/w:header="[^"]*"/', 'w:header="567"', $attrs) ?? $attrs;
+                    } else {
+                        $attrs .= ' w:header="567"';
+                    }
+
+                    return '<w:pgMar'.$attrs.'/>';
+                }, $docXml) ?? $docXml;
+
+                if ($updatedDocXml !== $docXml) {
+                    $zip->addFromString('word/document.xml', $updatedDocXml);
+                    $modified = true;
+                }
+            }
+        }
+
+        $zip->close();
+
+        return $modified;
+    }
+
+    /**
+     * Detects whether the first child of <w:body> already starts with manual vertical spacing
+     * (either an empty blank paragraph or leading non-page <w:br/> before any text/drawing).
+     */
+    private function firstBodyParagraphHasLeadingSpacing(string $docXml): bool
+    {
+        $dom = new DOMDocument;
+        $prevErrors = libxml_use_internal_errors(true);
+        $loaded = $dom->loadXML($docXml);
+        libxml_clear_errors();
+        libxml_use_internal_errors($prevErrors);
+
+        if (! $loaded) {
+            return false;
+        }
+
+        $wNs = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+        $xpath = new DOMXPath($dom);
+        $xpath->registerNamespace('w', $wNs);
+
+        $firstChild = $xpath->query('/w:document/w:body/*[1]');
+        if ($firstChild === false || $firstChild->length === 0) {
+            return false;
+        }
+
+        $firstNode = $firstChild->item(0);
+        if (! $firstNode instanceof DOMElement || $firstNode->localName !== 'p') {
+            return false;
+        }
+
+        $hasDrawingOrPict = ($xpath->query('.//w:drawing | .//w:pict', $firstNode)?->length ?? 0) > 0;
+        if (trim($firstNode->textContent) === '' && ! $hasDrawingOrPict) {
+            return true;
+        }
+
+        $tokens = $xpath->query('.//w:r/w:br | .//w:r/w:t | .//w:r/w:drawing | .//w:r/w:pict', $firstNode);
+        if ($tokens === false) {
+            return false;
+        }
+
+        foreach ($tokens as $tok) {
+            if (! $tok instanceof DOMElement) {
+                continue;
+            }
+            if ($tok->localName === 'br') {
+                $type = $tok->getAttributeNS($wNs, 'type') ?: $tok->getAttribute('w:type');
+                if (strtolower($type) !== 'page') {
+                    return true;
+                }
+            } elseif ($tok->localName === 't') {
+                if (trim($tok->textContent) !== '') {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Ensures clean page break before the Lampiran section in DOCX XML without destroying
+     * intentional user Enters or Workspace-Kop Page 2 tables:
+     * 1. If the Lampiran paragraph has <w:pageBreakBefore/>, strips it and any redundant leading
+     *    <w:br/> inside the Lampiran paragraph, and normalizes redundant breaks immediately before it
+     *    into ONE clean <w:br w:type="page"/> paragraph (unless Kop Page 2 + page break already precede it).
+     * 2. If the Lampiran paragraph does NOT have <w:pageBreakBefore/> and a <w:br w:type="page"/>
+     *    already precedes it (with optional Kop Page 2 table and/or user Enters in between),
+     *    leaves the document 100% verbatim.
+     * 3. If no page break precedes the Lampiran paragraph at all, inserts ONE clean <w:br w:type="page"/>
+     *    paragraph immediately before it.
      */
     private function ensureLampiranPageBreakInXml(string $docxPath): void
     {
@@ -679,30 +1283,188 @@ class DocxRenderer
             return;
         }
 
-        // Clean up any standalone empty paragraphs or manual page breaks right before Lampiran I or __lampiran_section_start
-        $cleanPattern = '/(?:<w:p\b[^>]*>(?:(?!<\/w:p>).)*<w:br\b[^>]*w:type="page"[^>]*>.*?<\/w:p>\s*|<w:p\b[^>]*>(?:<w:pPr>.*?<\/w:pPr>)?\s*<\/w:p>\s*)+(?=<w:p\b[^>]*>(?:(?!<\/w:p>).)*(?:\$\{__lampiran_section_start\}|Lampiran\s+[IVX]+(?!\s*:)))/is';
-        $xml = preg_replace($cleanPattern, '', $xml) ?? $xml;
+        $dom = new DOMDocument;
+        $dom->preserveWhiteSpace = true;
+        $prevErrors = libxml_use_internal_errors(true);
+        $loaded = $dom->loadXML($xml);
+        libxml_clear_errors();
+        libxml_use_internal_errors($prevErrors);
 
-        // Ensure paragraph containing Lampiran [Roman] has <w:pageBreakBefore/> if not already preceded by Page 2 Kop
-        if (! str_contains($xml, '__kop_p2')) {
-            $xml = preg_replace_callback(
-                '/<w:p\b([^>]*)>((?:(?!<\/w:p>).)*?\bLampiran\s+[IVX]+(?!\s*:).*?<\/w:p>)/is',
-                function (array $m): string {
-                    $full = $m[0];
-                    if (str_contains($full, '<w:pageBreakBefore')) {
-                        return $full;
-                    }
-                    if (preg_match('/<w:pPr\b[^>]*>/', $full)) {
-                        return preg_replace('/(<w:pPr\b[^>]*>)/', '$1<w:pageBreakBefore/>', $full, 1) ?? $full;
-                    }
+        if (! $loaded) {
+            $zip->close();
 
-                    return preg_replace('/<w:p\b([^>]*)>/', '<w:p$1><w:pPr><w:pageBreakBefore/></w:pPr>', $full, 1) ?? $full;
-                },
-                $xml
-            ) ?? $xml;
+            return;
         }
 
-        $zip->addFromString('word/document.xml', $xml);
+        $wNs = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+        $xpath = new DOMXPath($dom);
+        $xpath->registerNamespace('w', $wNs);
+
+        $bodyNodes = $xpath->query('/w:document/w:body');
+        if ($bodyNodes === false || $bodyNodes->length === 0 || ! $bodyNodes->item(0) instanceof DOMElement) {
+            $zip->close();
+
+            return;
+        }
+        $body = $bodyNodes->item(0);
+
+        $lampiranParagraphs = [];
+        $bodyParagraphs = $xpath->query('./w:p', $body);
+        if ($bodyParagraphs !== false) {
+            foreach ($bodyParagraphs as $pNode) {
+                if (! $pNode instanceof DOMElement) {
+                    continue;
+                }
+                $text = $pNode->textContent;
+                if (preg_match('/(?:\$\{__lampiran_section_start\}|\bLampiran\s+[IVX]+(?!\s*:))/i', $text)) {
+                    $lampiranParagraphs[] = $pNode;
+                }
+            }
+        }
+
+        if ($lampiranParagraphs === []) {
+            $zip->close();
+
+            return;
+        }
+
+        $modified = false;
+
+        $createCleanBreakParagraph = function () use ($dom, $wNs): DOMElement {
+            $breakP = $dom->createElementNS($wNs, 'w:p');
+            $breakPPr = $dom->createElementNS($wNs, 'w:pPr');
+            $breakSpacing = $dom->createElementNS($wNs, 'w:spacing');
+            $breakSpacing->setAttributeNS($wNs, 'w:before', '0');
+            $breakSpacing->setAttributeNS($wNs, 'w:after', '0');
+            $breakSpacing->setAttributeNS($wNs, 'w:line', '240');
+            $breakSpacing->setAttributeNS($wNs, 'w:lineRule', 'auto');
+            $breakPPr->appendChild($breakSpacing);
+            $breakP->appendChild($breakPPr);
+
+            $breakR = $dom->createElementNS($wNs, 'w:r');
+            $breakBr = $dom->createElementNS($wNs, 'w:br');
+            $breakBr->setAttributeNS($wNs, 'w:type', 'page');
+            $breakR->appendChild($breakBr);
+            $breakP->appendChild($breakR);
+
+            return $breakP;
+        };
+
+        foreach ($lampiranParagraphs as $lampiranP) {
+            // 1. Strip any <w:pageBreakBefore/> from Lampiran paragraph
+            $hadPageBreakBefore = false;
+            $pbNodes = $xpath->query('./w:pPr/w:pageBreakBefore', $lampiranP);
+            if ($pbNodes !== false && $pbNodes->length > 0) {
+                $hadPageBreakBefore = true;
+                foreach (iterator_to_array($pbNodes) as $pbNode) {
+                    $pbNode->parentNode?->removeChild($pbNode);
+                }
+                $modified = true;
+            }
+
+            // Strip redundant leading <w:br/> inside the Lampiran paragraph when it had pageBreakBefore
+            if ($hadPageBreakBefore) {
+                $runs = $xpath->query('./w:r', $lampiranP);
+                if ($runs !== false) {
+                    $stopScanning = false;
+                    foreach (iterator_to_array($runs) as $run) {
+                        if ($stopScanning || ! $run instanceof DOMElement) {
+                            break;
+                        }
+                        foreach (iterator_to_array($run->childNodes) as $rChild) {
+                            if (! $rChild instanceof DOMElement || $rChild->localName === 'rPr') {
+                                continue;
+                            }
+                            if ($rChild->localName === 'br') {
+                                $run->removeChild($rChild);
+                                $modified = true;
+                            } elseif ($rChild->localName === 't' && trim($rChild->textContent) === '') {
+                                continue;
+                            } else {
+                                $stopScanning = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 2. Inspect preceding siblings to see if a clean page break (and optional Kop Page 2 table) already exists
+            $foundPageBreakNode = null;
+            $foundKopTable = false;
+            $emptyBetween = [];
+
+            $prev = $lampiranP->previousSibling;
+            while ($prev !== null) {
+                if (! $prev instanceof DOMElement) {
+                    $prev = $prev->previousSibling;
+
+                    continue;
+                }
+
+                if ($prev->localName === 'p') {
+                    $hasPageBr = ($xpath->query('.//w:br[@w:type="page"]', $prev)?->length ?? 0) > 0;
+                    if ($hasPageBr) {
+                        $foundPageBreakNode = $prev;
+                        break;
+                    }
+
+                    $hasContent = ($xpath->query('.//w:t | .//w:drawing | .//w:pict', $prev)?->length ?? 0) > 0;
+                    if (! $hasContent) {
+                        $emptyBetween[] = $prev;
+                        $prev = $prev->previousSibling;
+
+                        continue;
+                    }
+
+                    break;
+                }
+
+                if ($prev->localName === 'tbl' && ! $foundKopTable) {
+                    // KopInjector tables have double bottom border (<w:bottom w:val="double"/>)
+                    $isKopTbl = ($xpath->query('.//w:tblBorders/w:bottom[@w:val="double"]', $prev)?->length ?? 0) > 0;
+                    if ($isKopTbl) {
+                        $foundKopTable = true;
+                        $prev = $prev->previousSibling;
+
+                        continue;
+                    }
+
+                    break;
+                }
+
+                break;
+            }
+
+            if ($hadPageBreakBefore) {
+                if ($foundKopTable && $foundPageBreakNode !== null) {
+                    // Kop Page 2 and its preceding page break are already cleanly structured
+                    continue;
+                }
+
+                foreach ($emptyBetween as $emptyNode) {
+                    $emptyNode->parentNode?->removeChild($emptyNode);
+                }
+                if ($foundPageBreakNode !== null) {
+                    $foundPageBreakNode->parentNode?->removeChild($foundPageBreakNode);
+                }
+
+                $body->insertBefore($createCleanBreakParagraph(), $lampiranP);
+                $modified = true;
+            } elseif ($foundPageBreakNode === null) {
+                // No page break before Lampiran at all -> insert ONE clean page break
+                $body->insertBefore($createCleanBreakParagraph(), $lampiranP);
+                $modified = true;
+            }
+        }
+
+        if ($modified) {
+            $savedXml = $dom->saveXML();
+            if ($savedXml !== false) {
+                $zip->addFromString('word/document.xml', $savedXml);
+            }
+        }
+
         $zip->close();
     }
 }
