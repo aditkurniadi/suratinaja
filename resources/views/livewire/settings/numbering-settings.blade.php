@@ -126,7 +126,7 @@
                             id="nextSequence"
                             type="number"
                             min="{{ $minAllowedSequence }}"
-                            wire:model.live="nextSequence"
+                            wire:model.live.debounce.300ms="nextSequence"
                             class="mt-1.5 font-mono"
                             placeholder="1"
                         />

@@ -19,9 +19,9 @@ class NumberingSettings extends Component
 
     public bool $isActivity = true;
 
-    public int $seqPadding = 3;
+    public $seqPadding = 3;
 
-    public int $nextSequence = 1;
+    public $nextSequence = 1;
 
     public int $initialNextSequence = 1;
 
@@ -60,7 +60,7 @@ class NumberingSettings extends Component
 
         $this->minAllowedSequence = $maxIssuedSequence > 0 ? ($maxIssuedSequence + 1) : 1;
         $this->nextSequence = max($this->minAllowedSequence, $lastSeq + 1);
-        $this->initialNextSequence = $this->nextSequence;
+        $this->initialNextSequence = (int) $this->nextSequence;
     }
 
     public function applyPreset(string $presetKey): void
@@ -103,9 +103,11 @@ class NumberingSettings extends Component
             return;
         }
 
+        $currentSeq = (int) $this->nextSequence;
+
         // Validasi ketat nomor urut minimum
-        if ($this->nextSequence < $this->minAllowedSequence) {
-            $pad = $this->seqPadding;
+        if ($currentSeq < $this->minAllowedSequence) {
+            $pad = (int) ($this->seqPadding ?: 3);
             $formattedMin = str_pad((string) max(1, $this->minAllowedSequence - 1), $pad, '0', STR_PAD_LEFT);
             $this->addError(
                 'nextSequence',
@@ -116,7 +118,7 @@ class NumberingSettings extends Component
         }
 
         // Jika nomor urut berubah, munculkan modal konfirmasi terlebih dahulu
-        if ($this->nextSequence !== $this->initialNextSequence) {
+        if ($currentSeq !== $this->initialNextSequence) {
             $this->showConfirmModal = true;
 
             return;
@@ -134,13 +136,15 @@ class NumberingSettings extends Component
     {
         $ws = app(CurrentWorkspace::class)->get();
         $user = auth()->user();
+        $currentSeq = (int) $this->nextSequence;
+        $padding = (int) ($this->seqPadding ?: 3);
 
         $ws->fill([
             'number_pattern' => trim($this->numberPattern),
             'number_code' => trim($this->numberCode),
             'activity_code' => $this->isActivity ? strtoupper(trim($this->activityCode)) : null,
             'is_activity' => $this->isActivity,
-            'seq_padding' => $this->seqPadding,
+            'seq_padding' => $padding,
         ])->save();
 
         $periodKey = app(\App\Services\Numbering\NumberAllocator::class)->periodKey(now());
@@ -150,30 +154,31 @@ class NumberingSettings extends Component
                 'period_key' => $periodKey,
             ],
             [
-                'last_sequence' => max(0, $this->nextSequence - 1),
+                'last_sequence' => max(0, $currentSeq - 1),
                 'updated_at' => now(),
             ]
         );
 
-        if ($sequenceChanged || $this->nextSequence !== $this->initialNextSequence) {
+        if ($sequenceChanged || $currentSeq !== $this->initialNextSequence) {
             \App\Models\WorkspaceAuditLog::create([
                 'workspace_id' => $ws->id,
                 'user_id' => $user?->id,
                 'action' => 'numbering_sequence_changed',
-                'description' => "Nomor urut berikutnya diubah dari {$this->initialNextSequence} menjadi {$this->nextSequence}.",
+                'description' => "Nomor urut berikutnya diubah dari {$this->initialNextSequence} menjadi {$currentSeq}.",
                 'payload' => [
                     'old_sequence' => $this->initialNextSequence,
-                    'new_sequence' => $this->nextSequence,
+                    'new_sequence' => $currentSeq,
                     'min_allowed' => $this->minAllowedSequence,
                     'period_key' => $periodKey,
-                    'saved_last_sequence' => max(0, $this->nextSequence - 1),
+                    'saved_last_sequence' => max(0, $currentSeq - 1),
                 ],
                 'created_at' => now(),
             ]);
 
-            $this->initialNextSequence = $this->nextSequence;
+            $this->initialNextSequence = $currentSeq;
         }
 
+        $this->nextSequence = $currentSeq;
         $this->showConfirmModal = false;
 
         $this->dispatch('toast', [
@@ -195,9 +200,10 @@ class NumberingSettings extends Component
             $tempWs->number_code = $this->numberCode;
             $tempWs->activity_code = $this->activityCode;
             $tempWs->is_activity = $this->isActivity;
-            $tempWs->seq_padding = $this->seqPadding;
+            $tempWs->seq_padding = (int) ($this->seqPadding ?: 3);
             $sampleDate = \Carbon\Carbon::create(2026, 7, 15);
-            $preview = $renderer->render($this->numberPattern, $tempWs, $this->nextSequence, $sampleDate, [
+            $seqForPreview = is_numeric($this->nextSequence) ? (int) $this->nextSequence : 1;
+            $preview = $renderer->render($this->numberPattern, $tempWs, max(1, $seqForPreview), $sampleDate, [
                 'kategori' => 'SPm',
                 'parameter' => '-i',
                 'kode_kegiatan' => $this->isActivity ? strtoupper(trim($this->activityCode)) : '',
