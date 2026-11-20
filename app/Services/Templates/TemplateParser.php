@@ -20,7 +20,7 @@ class TemplateParser
      *
      * @throws DomainException
      */
-    public function parse(string $absolutePath): array
+    public function parse(string $absolutePath, bool $allowEmpty = false): array
     {
         if (! is_file($absolutePath) || ! is_readable($absolutePath)) {
             throw DomainException::templateInvalid('File template tidak ditemukan atau tidak dapat dibaca.');
@@ -96,6 +96,10 @@ class TemplateParser
         } catch (Throwable $e) {
             $rawVariables = array_values(array_unique($allFoundVars));
             if (empty($rawVariables)) {
+                if ($allowEmpty) {
+                    return [];
+                }
+
                 throw DomainException::templateInvalid(
                     'Parsing variabel gagal pada template — periksa struktur placeholder dokumen.',
                     ['reason' => $e->getMessage()]
@@ -105,6 +109,10 @@ class TemplateParser
 
         $schema = $this->typeResolver->resolve($rawVariables);
         if (empty($schema)) {
+            if ($allowEmpty) {
+                return [];
+            }
+
             $diagnosticHints = [];
 
             // Check if user wrote variables with spaces e.g. ${nama kegiatan}

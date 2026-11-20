@@ -149,6 +149,18 @@
                                             <x-ui.button variant="ghost" size="sm" :href="route('letters.show', $letter->id)">
                                                 Detail
                                             </x-ui.button>
+                                            @if ($role?->canWrite() && $letter->signed_at === null && $letter->status !== \App\Enums\LetterStatus::Selesai)
+                                                <x-ui.button
+                                                    variant="ghost"
+                                                    size="sm"
+                                                    class="text-destructive hover:bg-destructive/10 hover:text-destructive h-8 w-8 p-0"
+                                                    wire:click="deleteLetter({{ $letter->id }})"
+                                                    wire:confirm="Yakin ingin menghapus draf surat '{{ $letter->perihal }}'? Dokumen akan dihapus dan nomor surat akan dilepaskan (tidak hangus)."
+                                                    title="Hapus draf &amp; lepaskan nomor"
+                                                >
+                                                    <x-lucide-trash-2 class="size-3.5" />
+                                                </x-ui.button>
+                                            @endif
                                         </div>
                                     </td>
                                 </tr>
@@ -216,6 +228,18 @@
                                     <x-ui.button variant="ghost" size="xs" :href="route('letters.show', $letter->id)">
                                         Detail
                                     </x-ui.button>
+                                    @if ($role?->canWrite() && $letter->signed_at === null && $letter->status !== \App\Enums\LetterStatus::Selesai)
+                                        <x-ui.button
+                                            variant="ghost"
+                                            size="xs"
+                                            class="text-destructive hover:bg-destructive/10 hover:text-destructive h-7 w-7 p-0"
+                                            wire:click="deleteLetter({{ $letter->id }})"
+                                            wire:confirm="Yakin ingin menghapus draf surat '{{ $letter->perihal }}'? Dokumen akan dihapus dan nomor surat akan dilepaskan (tidak hangus)."
+                                            title="Hapus draf &amp; lepaskan nomor"
+                                        >
+                                            <x-lucide-trash-2 class="size-3" />
+                                        </x-ui.button>
+                                    @endif
                                 </div>
                             </div>
                         </div>

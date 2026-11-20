@@ -178,4 +178,38 @@ class CalendarAndNumberingSyncTest extends TestCase
             ->assertSet('showMoreModal', false)
             ->assertSet('showPreviewModal', false);
     }
+
+    public function test_numbering_settings_handles_empty_sequence_input_without_crashing(): void
+    {
+        [$ws, $user] = $this->setupWorkspace();
+
+        Livewire::actingAs($user)
+            ->test(NumberingSettings::class)
+            // 1. Simulasikan user menghapus input nomor urut (backspace -> empty string)
+            ->set('nextSequence', '')
+            ->assertOk()
+            ->call('save')
+            ->assertHasErrors(['nextSequence' => 'required'])
+            // 2. Simulasikan user memasukkan angka di bawah batas minimum
+            ->set('nextSequence', 0)
+            ->call('save')
+            ->assertHasErrors(['nextSequence'])
+            // 3. Simulasikan padding dikosongkan
+            ->set('nextSequence', 10)
+            ->set('seqPadding', '')
+            ->call('save')
+            ->assertHasErrors(['seqPadding' => 'required'])
+            // 4. Masukkan nilai valid dan simpan
+            ->set('seqPadding', 3)
+            ->set('nextSequence', 50)
+            ->call('save')
+            ->assertHasNoErrors()
+            ->call('confirmSave')
+            ->assertDispatched('toast');
+
+        $this->assertDatabaseHas('letter_number_sequences', [
+            'workspace_id' => $ws->id,
+            'last_sequence' => 49,
+        ]);
+    }
 }

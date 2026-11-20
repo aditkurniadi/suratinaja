@@ -33,6 +33,7 @@ class UploadTemplateAction
         TemplateScope $scope = TemplateScope::Workspace,
         ?string $description = null,
         bool $hasEmbeddedKop = false,
+        bool $allowEmptyVariables = false,
     ): LetterTemplate {
         if ($scope === TemplateScope::Global) {
             if (! $actor->is_super_admin) {
@@ -54,7 +55,7 @@ class UploadTemplateAction
             throw DomainException::templateInvalid('Ukuran file template melebihi batas maksimum yang diizinkan.');
         }
 
-        $schema = $this->parser->parse($file->getRealPath());
+        $schema = $this->parser->parse($file->getRealPath(), $allowEmptyVariables);
 
         $folder = $scope === TemplateScope::Global
             ? 'templates/global'

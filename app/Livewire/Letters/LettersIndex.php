@@ -2,6 +2,7 @@
 
 namespace App\Livewire\Letters;
 
+use App\Actions\Letters\DeleteLetterAction;
 use App\Actions\Letters\DuplicateLetterAction;
 use App\Actions\Letters\TransitionLetterStatusAction;
 use App\Exceptions\DomainException;
@@ -66,6 +67,27 @@ class LettersIndex extends Component
             $this->dispatch('toast', [
                 'type' => 'error',
                 'title' => 'Gagal menduplikasi surat',
+                'description' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    public function deleteLetter(int $letterId, DeleteLetterAction $action): void
+    {
+        $letter = Letter::findOrFail($letterId);
+
+        try {
+            $formattedNumber = $letter->formatted_number;
+            $action->execute($letter, auth()->user());
+            $this->dispatch('toast', [
+                'type' => 'success',
+                'title' => 'Draf surat berhasil dihapus',
+                'description' => $formattedNumber ? "Nomor surat {$formattedNumber} dilepaskan dan tidak hangus." : 'Draf surat berhasil dihapus.',
+            ]);
+        } catch (DomainException $e) {
+            $this->dispatch('toast', [
+                'type' => 'error',
+                'title' => 'Gagal menghapus draf surat',
                 'description' => $e->getMessage(),
             ]);
         }
