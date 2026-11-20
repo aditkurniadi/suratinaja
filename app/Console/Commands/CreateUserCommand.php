@@ -67,6 +67,8 @@ class CreateUserCommand extends Command
             'password' => Hash::make($password),
             'email_verified_at' => now(),
             'is_super_admin' => (bool) $isSuperAdmin,
+            'status' => 'active',
+            'is_demo' => false,
         ]);
 
         // Hubungkan ke Workspace

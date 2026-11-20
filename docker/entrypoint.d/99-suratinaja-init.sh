@@ -14,6 +14,9 @@ if [ "${AUTORUN_LARAVEL_MIGRATION:-false}" = "true" ] || [ "${CONTAINER_ROLE:-ap
     echo "==> [SuratinAja] Menjalankan migrasi database..."
     php /var/www/html/artisan migrate --force || true
 
+    echo "==> [SuratinAja] Menyinkronkan akun Super Admin dari environment..."
+    php /var/www/html/artisan app:sync-superadmin || true
+
     echo "==> [SuratinAja] Menyinkronkan permission & role Spatie (idempotent)..."
     php /var/www/html/artisan db:seed --class=RoleAndPermissionSeeder --force || true
 
