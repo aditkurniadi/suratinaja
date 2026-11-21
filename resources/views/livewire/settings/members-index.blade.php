@@ -117,15 +117,17 @@
                                     </td>
                                     <td class="py-2.5 px-3 text-right">
                                         @can('member.remove')
-                                            <x-ui.button
-                                                variant="ghost"
-                                                size="sm"
-                                                class="text-destructive hover:text-destructive text-xs"
-                                                wire:click="revoke({{ $member->id }})"
-                                                wire:confirm="Yakin ingin mencabut akses {{ $member->user?->name }} dari workspace ini?"
+                                            <button
+                                                type="button"
+                                                class="inline-flex items-center justify-center px-2.5 py-1.5 rounded-lg text-xs font-semibold text-destructive hover:bg-destructive/10 transition cursor-pointer"
+                                                @click="$store.confirmModal.show({
+                                                    title: 'Cabut Akses Anggota?',
+                                                    message: 'Yakin ingin mencabut akses {{ addslashes($member->user?->name) }} dari workspace ini?',
+                                                    confirmText: 'Ya, Cabut Akses'
+                                                }).then(ok => ok && $wire.revoke({{ $member->id }}))"
                                             >
                                                 Cabut Akses
-                                            </x-ui.button>
+                                            </button>
                                         @endcan
                                     </td>
                                 </tr>
@@ -219,8 +221,11 @@
                                                         </button>
                                                         <button
                                                             type="button"
-                                                            wire:click="revokeInvitation({{ $inv->id }})"
-                                                            wire:confirm="Yakin ingin membatalkan undangan untuk {{ $inv->email }}?"
+                                                            @click="$store.confirmModal.show({
+                                                                title: 'Batalkan Undangan?',
+                                                                message: 'Yakin ingin membatalkan undangan untuk {{ addslashes($inv->email) }}?',
+                                                                confirmText: 'Ya, Batalkan'
+                                                            }).then(ok => ok && $wire.revokeInvitation({{ $inv->id }}))"
                                                             class="px-2 py-1 rounded hover:bg-destructive/10 text-destructive text-[11px] font-medium transition-colors cursor-pointer"
                                                             title="Batalkan Undangan"
                                                         >

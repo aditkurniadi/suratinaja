@@ -8,10 +8,19 @@
                 </x-ui.card-description>
             </div>
             <div class="flex items-center gap-2">
-                <x-ui.button type="button" variant="outline" size="sm" wire:click="resetToDefaults" wire:confirm="Kembalikan daftar jenis surat ke 10 jenis standar HIMATRIS?">
+                <button
+                    type="button"
+                    class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-background text-xs font-medium hover:bg-muted transition shadow-2xs cursor-pointer"
+                    @click="$store.confirmModal.show({
+                        title: 'Kembalikan ke Standar?',
+                        message: 'Kembalikan daftar jenis surat ke 10 jenis standar bawaan? Semua jenis kustom akan hilang.',
+                        confirmText: 'Ya, Kembalikan',
+                        confirmVariant: 'warning'
+                    }).then(ok => ok && $wire.resetToDefaults())"
+                >
                     <x-lucide-rotate-ccw class="size-3.5" />
                     <span>Reset Default</span>
-                </x-ui.button>
+                </button>
                 <x-ui.button type="button" size="sm" wire:click="openCreateModal">
                     <x-lucide-plus class="size-4" />
                     <span>Tambah Jenis Surat</span>
@@ -58,17 +67,18 @@
                                         >
                                             <x-lucide-pencil class="size-3.5" />
                                         </x-ui.button>
-                                        <x-ui.button
+                                        <button
                                             type="button"
-                                            variant="ghost"
-                                            size="icon"
-                                            class="size-7 text-destructive hover:text-destructive"
-                                            wire:click="deleteType({{ $idx }})"
-                                            wire:confirm="Yakin ingin menghapus jenis surat '{{ $lt['code'] }}'?"
+                                            class="inline-flex items-center justify-center size-7 rounded-md text-destructive hover:bg-destructive/10 transition cursor-pointer"
+                                            @click="$store.confirmModal.show({
+                                                title: 'Hapus Jenis Surat?',
+                                                message: 'Yakin ingin menghapus jenis surat \'{{ $lt['code'] }}\'? Tindakan ini tidak dapat dibatalkan.',
+                                                confirmText: 'Ya, Hapus'
+                                            }).then(ok => ok && $wire.deleteType({{ $idx }}))"
                                             aria-label="Hapus jenis surat"
                                         >
                                             <x-lucide-trash-2 class="size-3.5" />
-                                        </x-ui.button>
+                                        </button>
                                     </div>
                                 </td>
                             </tr>

@@ -65,17 +65,18 @@
                         </x-ui.button>
 
                         @if (! $isDefault && $r->users_count === 0)
-                            <x-ui.button
+                            <button
                                 type="button"
-                                size="xs"
-                                variant="destructive"
-                                wire:click="deleteRole({{ $r->id }})"
-                                wire:confirm="Hapus role '{{ $r->name }}' dari workspace?"
-                                class="p-1.5"
+                                class="inline-flex items-center justify-center p-1.5 rounded-lg bg-destructive text-destructive-foreground hover:bg-destructive/90 transition shadow-xs cursor-pointer"
+                                @click="$store.confirmModal.show({
+                                    title: 'Hapus Role?',
+                                    message: 'Hapus role \'{{ addslashes($r->name) }}\' dari workspace? Tindakan ini tidak dapat dibatalkan.',
+                                    confirmText: 'Ya, Hapus'
+                                }).then(ok => ok && $wire.deleteRole({{ $r->id }}))"
                                 title="Hapus Role"
                             >
                                 <x-lucide-trash-2 class="size-3" />
-                            </x-ui.button>
+                            </button>
                         @endif
                     @endcan
                 </div>

@@ -4,6 +4,7 @@ namespace App\Livewire\Letters;
 
 use App\Actions\Letters\CreateLetterAction;
 use App\Actions\Letters\UpdateDraftAction;
+use App\Actions\Letters\UploadManualDocumentAction;
 use App\Enums\LetterStatus;
 use App\Exceptions\DomainException;
 use App\Models\Letter;
@@ -13,10 +14,12 @@ use App\Services\Templates\VariableTypeResolver;
 use App\Support\CurrentWorkspace;
 use Livewire\Attributes\Title;
 use Livewire\Component;
+use Livewire\WithFileUploads;
 
 #[Title('Komposisi Surat')]
 class LetterComposer extends Component
 {
+    use WithFileUploads;
     public int $currentStep = 1;
 
     public string $letterMode = 'template'; // 'template' | 'manual_number'
@@ -62,6 +65,10 @@ class LetterComposer extends Component
 
     public string $manualNotes = '';
 
+    public string $keterangan = '';
+
+    public $manualArchiveFile = null;
+
     /** @var array<int, array{position: string, name: string, id_label: string, id_number: string}> */
     public array $signers = [];
 
@@ -97,6 +104,7 @@ class LetterComposer extends Component
             $this->recipientName = (string) ($this->values['penerima'] ?? '');
             $this->recipientAgency = (string) ($this->values['instansi'] ?? '');
             $this->manualNotes = (string) ($this->values['catatan'] ?? '');
+            $this->keterangan = $existing->keterangan ?? ($existing->field_values['catatan'] ?? '');
             $this->kategori = (string) ($this->values['_kategori'] ?? 'SU');
             $this->parameter = (string) ($this->values['_parameter'] ?? '-i');
             $this->kodeKegiatan = (string) ($this->values['_kode_kegiatan'] ?? ($ws->activity_code ?: 'OASIS'));
@@ -171,6 +179,10 @@ class LetterComposer extends Component
                 $this->initializeTemplateDefaults();
             }
         }
+
+        if (request()->query('mode') === 'manual') {
+            $this->letterMode = 'manual_number';
+        }
     }
 
     public function updatedTemplateId(): void
@@ -240,9 +252,13 @@ class LetterComposer extends Component
             if ($this->letterMode === 'manual_number') {
                 $this->validate([
                     'recipientName' => ['required', 'string', 'max:255'],
+                    'recipientAgency' => ['required', 'string', 'max:255'],
+                    'keterangan' => ['nullable', 'string', 'max:2000'],
+                    'manualArchiveFile' => ['nullable', 'file', 'mimes:pdf,docx', 'max:20480'],
                     'linkDrive' => ['nullable', 'url', 'max:500'],
                 ], [
                     'recipientName.required' => 'Nama penerima / tujuan surat wajib diisi.',
+                    'recipientAgency.required' => 'Instansi tujuan wajib diisi untuk surat manual.',
                     'linkDrive.url' => 'Format URL Google Drive tidak valid (harus dimulai dengan https://).',
                 ]);
             }
@@ -375,6 +391,9 @@ class LetterComposer extends Component
             $rules['templateId'] = ['required', 'integer'];
         } else {
             $rules['recipientName'] = ['required', 'string', 'max:255'];
+            $rules['recipientAgency'] = ['required', 'string', 'max:255'];
+            $rules['keterangan'] = ['nullable', 'string', 'max:2000'];
+            $rules['manualArchiveFile'] = ['nullable', 'file', 'mimes:pdf,docx', 'max:20480'];
             $rules['linkDrive'] = ['nullable', 'url', 'max:500'];
         }
 
@@ -420,18 +439,29 @@ class LetterComposer extends Component
                 $letter = $createAction->execute($ws, auth()->user(), [
                     'template_id' => $this->letterMode === 'template' ? $this->templateId : null,
                     'is_manual_number' => $this->letterMode === 'manual_number',
+                    'is_manual' => $this->letterMode === 'manual_number',
                     'surat_masuk_id' => $this->replyToSuratMasukId,
                     'link_drive' => $this->linkDrive ? trim($this->linkDrive) : null,
                     'perihal' => $this->perihal,
                     'letter_date' => $this->letterDate,
                     'tanggal_kegiatan' => $this->tanggalKegiatan ?: null,
                     'variables' => $payloadValues,
+                    'keterangan' => $this->keterangan ?: null,
                 ]);
             }
         } catch (DomainException $e) {
             $this->errorMessage = $e->getMessage();
 
             return;
+        }
+
+        // Upload manual archive file if provided (new letter only)
+        if ($this->letterId === null && $this->letterMode === 'manual_number' && $this->manualArchiveFile !== null) {
+            try {
+                app(UploadManualDocumentAction::class)->execute($letter, auth()->user(), $this->manualArchiveFile);
+            } catch (\Throwable) {
+                // non-fatal: letter already created, just skip file upload
+            }
         }
 
         $this->redirect(route('letters.show', $letter->id), navigate: false);

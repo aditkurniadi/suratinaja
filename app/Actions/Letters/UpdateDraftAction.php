@@ -41,7 +41,12 @@ class UpdateDraftAction
             );
         }
 
-        $template = $letter->template()->withoutGlobalScopes()->firstOrFail();
+        $isManual = (bool) ($letter->is_manual || $letter->is_manual_number || ! $letter->template_id);
+        $template = $letter->template()->withoutGlobalScopes()->first();
+        if (! $isManual && ! $template) {
+            throw DomainException::templateInvalid('Template surat tidak ditemukan.');
+        }
+
         $perihal = isset($payload['perihal']) ? trim((string) $payload['perihal']) : $letter->perihal;
         if ($perihal === '') {
             throw DomainException::templateInvalid('Perihal surat wajib diisi.');
@@ -55,7 +60,9 @@ class UpdateDraftAction
             ? array_replace($letter->field_values ?? [], $payload['variables'])
             : ($letter->field_values ?? []);
 
-        $this->creator->validateRequiredVariables($template->variables_schema ?? [], $variables);
+        if ($template) {
+            $this->creator->validateRequiredVariables($template->variables_schema ?? [], $variables);
+        }
 
         $before = [
             'perihal' => $letter->perihal,
@@ -63,7 +70,7 @@ class UpdateDraftAction
             'field_values' => $letter->field_values,
         ];
 
-        if ($letter->preview_pdf_path) {
+        if (! $isManual && $letter->preview_pdf_path) {
             Storage::disk('local')->delete($letter->preview_pdf_path);
         }
 
@@ -71,8 +78,19 @@ class UpdateDraftAction
             'perihal' => $perihal,
             'letter_date' => $letterDate->toDateString(),
             'field_values' => $variables,
-            'preview_pdf_path' => null,
         ];
+
+        if (! $isManual) {
+            $fillData['preview_pdf_path'] = null;
+        }
+
+        if (array_key_exists('keterangan', $payload)) {
+            $fillData['keterangan'] = $payload['keterangan'] ?: null;
+        }
+
+        if (array_key_exists('link_drive', $payload)) {
+            $fillData['link_drive'] = $payload['link_drive'] ?: null;
+        }
 
         if (array_key_exists('tanggal_kegiatan', $payload)) {
             $fillData['tanggal_kegiatan'] = ! empty($payload['tanggal_kegiatan']) ? Carbon::parse($payload['tanggal_kegiatan'])->toDateString() : null;
@@ -84,8 +102,10 @@ class UpdateDraftAction
 
         $letter->fill($fillData)->save();
 
-        $docxPath = $this->renderer->renderSingle($letter->fresh(['activeNumber', 'template', 'workspace']));
-        $letter->forceFill(['generated_file_path' => $docxPath])->saveQuietly();
+        if ($template) {
+            $docxPath = $this->renderer->renderSingle($letter->fresh(['activeNumber', 'template', 'workspace']));
+            $letter->forceFill(['generated_file_path' => $docxPath])->saveQuietly();
+        }
 
         LetterActivity::withoutGlobalScopes()->create([
             'letter_id' => $letter->id,

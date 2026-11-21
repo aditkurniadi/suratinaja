@@ -121,7 +121,7 @@
                     </div>
 
                     <div>
-                        <x-ui.label for="nextSequence">Nomor Urut Berikutnya <span class="text-destructive">*</span></x-ui.label>
+                        <x-ui.label for="nextSequence">Mulai dari Nomor Berikutnya (Start Number) <span class="text-destructive">*</span></x-ui.label>
                         <x-ui.input
                             id="nextSequence"
                             type="number"
@@ -131,6 +131,7 @@
                             placeholder="1"
                         />
                         <p class="text-[10px] text-muted-foreground mt-0.5">
+                            Contoh: isi 22 → surat berikutnya bernomor 022, lalu 023, 024, dst.<br>
                             Batas minimum yang diizinkan: <strong class="text-foreground">{{ $minAllowedSequence }}</strong>
                         </p>
                         <x-ui.form-error for="nextSequence" />

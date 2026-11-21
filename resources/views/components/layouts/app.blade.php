@@ -356,12 +356,6 @@
                 'mx-auto max-w-[87.5rem] px-4 md:px-8 py-6' => ! $fullWidth,
                 'px-2 sm:px-3 py-2 flex flex-col min-h-0' => $fullWidth,
             ])>
-                @if (session('status'))
-                    <x-ui.alert class="mb-4">
-                        {{ session('status') }}
-                    </x-ui.alert>
-                @endif
-
                 {{ $slot }}
             </main>
         </div>
@@ -369,7 +363,27 @@
 
     <livewire:global-search />
     <x-ui.toaster />
+    <x-ui.confirm-modal />
     @livewireScripts
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            @if (session('success'))
+                window.Alpine?.store('toasts')?.push({ type: 'success', title: 'Berhasil', description: @js(session('success')) });
+            @endif
+            @if (session('status'))
+                window.Alpine?.store('toasts')?.push({ type: 'info', title: 'Informasi', description: @js(session('status')) });
+            @endif
+            @if (session('error'))
+                window.Alpine?.store('toasts')?.push({ type: 'error', title: 'Terjadi Kesalahan', description: @js(session('error')) });
+            @endif
+            @if (session('warning'))
+                window.Alpine?.store('toasts')?.push({ type: 'warning', title: 'Peringatan', description: @js(session('warning')) });
+            @endif
+            @if (session('info'))
+                window.Alpine?.store('toasts')?.push({ type: 'info', title: 'Informasi', description: @js(session('info')) });
+            @endif
+        });
+    </script>
     @stack('scripts')
 </body>
 </html>

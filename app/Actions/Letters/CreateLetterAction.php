@@ -74,6 +74,8 @@ class CreateLetterAction
                 'field_values' => $variables,
                 'link_drive' => $linkDrive ?: null,
                 'is_manual_number' => $isManual,
+                'is_manual' => (bool) ($payload['is_manual'] ?? $isManual),
+                'keterangan' => $payload['keterangan'] ?? null,
                 'version' => 1,
             ]);
 

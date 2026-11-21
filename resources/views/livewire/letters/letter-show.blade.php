@@ -135,9 +135,9 @@
             {{-- Sisi Kiri: Status Badge, Nomor Surat, & Perihal --}}
             <div class="flex items-center gap-2 min-w-0">
                 <x-ui.status-badge :status="$letter->status" />
-                @if ($letter->is_manual_number)
+                @if ($letter->isManualDocument())
                     <span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20">
-                        Eksternal
+                        Manual
                     </span>
                 @endif
                 <span class="font-mono font-semibold text-foreground truncate max-w-[180px] sm:max-w-xs" title="{{ $letter->formatted_number }}">
@@ -151,6 +151,32 @@
 
             {{-- Sisi Kanan: Tombol-tombol Aksi Modal & Workflow --}}
             <div class="flex items-center gap-1.5 shrink-0 flex-wrap">
+                {{-- Tombol Salin Nomor Surat --}}
+                <button
+                    type="button"
+                    @click="navigator.clipboard.writeText('{{ $letter->formatted_number }}'); $store.toasts.push({ type: 'success', title: 'Nomor Surat Disalin', description: '{{ $letter->formatted_number }}' })"
+                    class="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-lg text-xs font-semibold border border-border bg-background hover:bg-muted text-foreground transition cursor-pointer"
+                    title="Salin Nomor Surat ke Clipboard"
+                >
+                    <x-lucide-copy class="size-3.5 text-primary" />
+                    <span class="hidden sm:inline">Salin Nomor</span>
+                </button>
+
+                @if ($letter->isManualDocument() && $canEdit)
+                    {{-- Tombol Edit Metadata Surat Manual --}}
+                    <x-ui.button
+                        size="sm"
+                        variant="outline"
+                        type="button"
+                        wire:click="openEditMetadataModal"
+                        class="gap-1.5 h-8 px-2.5 text-amber-700 dark:text-amber-400 border-amber-300 dark:border-amber-800 hover:bg-amber-50 dark:hover:bg-amber-950/40"
+                        title="Edit Perihal, Tanggal, Instansi, atau Keterangan Surat"
+                    >
+                        <x-lucide-edit-3 class="size-3.5 text-amber-600 dark:text-amber-400" />
+                        <span class="hidden sm:inline">Edit Metadata</span>
+                    </x-ui.button>
+                @endif
+
                 {{-- Tombol Detail Surat --}}
                 <x-ui.button
                     size="sm"
@@ -377,23 +403,216 @@
             ? 'onlyoffice-wrapper-fullscreen bg-white dark:bg-zinc-950 flex flex-col'
             : 'onlyoffice-wrapper-normal relative rounded-lg border border-border bg-background flex flex-col shadow-xs overflow-hidden'"
     >
-        @if ($letter->is_manual_number)
-            <div class="flex-1 flex flex-col items-center justify-center p-8 text-center space-y-4 bg-muted/10">
-                <div class="size-16 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center">
-                    <x-lucide-external-link class="size-8" />
+        @if ($letter->isManualDocument())
+            {{-- Tampilan Khusus Surat Manual (Tanpa OnlyOffice) --}}
+            <div class="flex-1 flex flex-col bg-background overflow-y-auto">
+                {{-- Kartu Ringkasan Informasi Surat Manual --}}
+                <div class="p-4 sm:p-6 border-b border-border bg-card/60 space-y-4">
+                    <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                        <div class="space-y-1">
+                            <div class="flex items-center gap-2">
+                                <span class="px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20">
+                                    Surat Manual / Ambil Nomor Saja
+                                </span>
+                                <span class="text-xs text-muted-foreground">ID: #{{ $letter->id }}</span>
+                            </div>
+                            <div class="flex items-center gap-2 flex-wrap">
+                                <h2 class="text-xl sm:text-2xl font-mono font-bold text-foreground tracking-tight select-all">
+                                    {{ $letter->formatted_number ?? 'DRAFT' }}
+                                </h2>
+                                <button
+                                    type="button"
+                                    @click="navigator.clipboard.writeText('{{ $letter->formatted_number }}'); $store.toasts.push({ type: 'success', title: 'Nomor Surat Disalin', description: '{{ $letter->formatted_number }}' })"
+                                    class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold bg-primary/10 text-primary hover:bg-primary/20 transition cursor-pointer"
+                                    title="Salin Nomor Surat"
+                                >
+                                    <x-lucide-copy class="size-3.5" />
+                                    <span>Salin Nomor</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="flex items-center gap-2 flex-wrap">
+                            @if ($canEdit)
+                                <x-ui.button
+                                    size="sm"
+                                    variant="outline"
+                                    type="button"
+                                    wire:click="openEditMetadataModal"
+                                    class="gap-1.5"
+                                >
+                                    <x-lucide-edit-3 class="size-3.5 text-amber-600" />
+                                    <span>Edit Metadata</span>
+                                </x-ui.button>
+                            @endif
+
+                            <x-ui.button
+                                size="sm"
+                                variant="outline"
+                                type="button"
+                                wire:click="openEnvelopeModal"
+                                class="gap-1.5 text-indigo-700 dark:text-indigo-400 border-indigo-200 dark:border-indigo-800 hover:bg-indigo-50"
+                            >
+                                <x-lucide-mail class="size-3.5" />
+                                <span>Pratinjau Amplop</span>
+                            </x-ui.button>
+
+                            @if ($letter->link_drive)
+                                <x-ui.button as="a" href="{{ $letter->link_drive }}" target="_blank" size="sm" variant="outline" class="gap-1.5 text-blue-600 border-blue-200 hover:bg-blue-50">
+                                    <x-lucide-external-link class="size-3.5" />
+                                    <span>Buka Drive</span>
+                                </x-ui.button>
+                            @endif
+                        </div>
+                    </div>
+
+                    {{-- Metadata Grid --}}
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-2 text-xs">
+                        <div class="p-2.5 rounded-lg border border-border bg-background">
+                            <span class="text-muted-foreground block text-[11px]">Perihal</span>
+                            <span class="font-semibold text-foreground mt-0.5 block">{{ $letter->perihal }}</span>
+                        </div>
+                        <div class="p-2.5 rounded-lg border border-border bg-background">
+                            <span class="text-muted-foreground block text-[11px]">Instansi / Tujuan</span>
+                            <span class="font-semibold text-foreground mt-0.5 block">
+                                {{ $letter->field_values['instansi'] ?? $letter->field_values['penerima'] ?? '—' }}
+                            </span>
+                        </div>
+                        <div class="p-2.5 rounded-lg border border-border bg-background">
+                            <span class="text-muted-foreground block text-[11px]">Tanggal Surat</span>
+                            <span class="font-medium text-foreground mt-0.5 block">
+                                {{ $letter->letter_date ? $letter->letter_date->translatedFormat('d F Y') : '—' }}
+                            </span>
+                        </div>
+                        <div class="p-2.5 rounded-lg border border-border bg-background">
+                            <span class="text-muted-foreground block text-[11px]">Tanggal Kegiatan</span>
+                            <span class="font-medium text-foreground mt-0.5 block">
+                                {{ $letter->tanggal_kegiatan ? $letter->tanggal_kegiatan->translatedFormat('d F Y') : '—' }}
+                            </span>
+                        </div>
+                    </div>
+
+                    @if ($letter->keterangan)
+                        <div class="p-3 rounded-lg border border-border bg-muted/20 text-xs">
+                            <span class="font-semibold text-foreground block mb-0.5">Keterangan / Catatan Tambahan:</span>
+                            <p class="text-muted-foreground whitespace-pre-line">{{ $letter->keterangan }}</p>
+                        </div>
+                    @endif
                 </div>
-                <div class="space-y-1">
-                    <h3 class="text-lg font-semibold text-foreground">Surat Eksternal (Ambil Nomor Saja)</h3>
-                    <p class="text-xs text-muted-foreground max-w-md">
-                        Dokumen surat ini dibuat di luar sistem SuratinAja dengan nomor urut resmi yang terdaftar di database.
-                    </p>
+
+                {{-- Area Berkas Arsip (.pdf / .docx) --}}
+                <div class="flex-1 flex flex-col p-4 sm:p-6 space-y-4">
+                    <div class="flex items-center justify-between gap-3 pb-2 border-b border-border">
+                        <div class="flex items-center gap-2">
+                            <x-lucide-file-text class="size-4 text-primary" />
+                            <h3 class="text-xs font-semibold text-foreground uppercase tracking-wider">
+                                Berkas Arsip Dokumen
+                            </h3>
+                        </div>
+
+                        {{-- Area Upload / Ganti Berkas --}}
+                        @if ($canEdit)
+                            <div x-data="{ openUpload: false }" class="relative">
+                                <x-ui.button
+                                    size="sm"
+                                    variant="outline"
+                                    type="button"
+                                    @click="openUpload = !openUpload"
+                                    class="gap-1.5 text-xs"
+                                >
+                                    <x-lucide-upload class="size-3.5" />
+                                    <span>{{ $letter->preview_pdf_path || $letter->generated_file_path ? 'Ganti Berkas Arsip' : 'Upload Berkas Arsip' }}</span>
+                                </x-ui.button>
+
+                                <div
+                                    x-show="openUpload"
+                                    x-cloak
+                                    @click.away="openUpload = false"
+                                    class="absolute right-0 mt-2 w-80 p-4 rounded-xl border border-border bg-popover shadow-xl z-20 space-y-3"
+                                >
+                                    <div class="flex items-center justify-between">
+                                        <h4 class="text-xs font-semibold text-foreground">Upload Berkas (.pdf / .docx)</h4>
+                                        <button type="button" @click="openUpload = false" class="text-muted-foreground hover:text-foreground">&times;</button>
+                                    </div>
+                                    <input
+                                        type="file"
+                                        wire:model="newManualFile"
+                                        accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                                        class="block w-full text-xs text-muted-foreground file:mr-2 file:py-1.5 file:px-2.5 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-primary/10 file:text-primary border border-border rounded-lg bg-background p-1"
+                                    />
+                                    <div wire:loading wire:target="newManualFile" class="text-[11px] text-primary flex items-center gap-1.5">
+                                        <span class="size-3 border-2 border-primary border-t-transparent rounded-full animate-spin"></span>
+                                        <span>Mengunggah...</span>
+                                    </div>
+                                    <x-ui.form-error for="newManualFile" />
+                                    <div class="flex justify-end gap-2 pt-2">
+                                        <x-ui.button size="sm" variant="outline" type="button" @click="openUpload = false">Batal</x-ui.button>
+                                        <x-ui.button size="sm" type="button" wire:click="uploadManualDocument" :disabled="!$newManualFile" class="gap-1">
+                                            <x-lucide-check class="size-3.5" />
+                                            <span>Simpan</span>
+                                        </x-ui.button>
+                                    </div>
+                                </div>
+                            </div>
+                        @endif
+                    </div>
+
+                    @if ($letter->preview_pdf_path)
+                        {{-- Viewer PDF Langsung --}}
+                        <div class="flex-1 w-full min-h-[65vh] rounded-xl border border-border bg-muted/10 overflow-hidden relative">
+                            <iframe
+                                src="{{ route('letters.preview-pdf', $letter->id) }}?v={{ $letter->updated_at?->timestamp ?? time() }}"
+                                class="w-full h-full min-h-[65vh] border-0"
+                                title="Pratinjau Berkas PDF Arsip"
+                            ></iframe>
+                        </div>
+                    @elseif ($letter->generated_file_path)
+                        {{-- Tampilan Dokumen Word Tersimpan --}}
+                        <div class="p-8 rounded-xl border border-dashed border-border bg-muted/10 text-center space-y-3">
+                            <div class="size-12 rounded-full bg-blue-500/10 text-blue-600 flex items-center justify-center mx-auto">
+                                <x-lucide-file-text class="size-6" />
+                            </div>
+                            <div class="space-y-1">
+                                <h4 class="text-sm font-semibold text-foreground">Berkas Word (.docx) Tersimpan di Arsip</h4>
+                                <p class="text-xs text-muted-foreground">Dokumen Word manual telah diarsipkan untuk surat ini.</p>
+                            </div>
+                        </div>
+                    @else
+                        {{-- Kotak Belum Ada Berkas Arsip --}}
+                        <div class="p-8 rounded-xl border border-dashed border-border bg-muted/5 text-center space-y-4">
+                            <div class="size-12 rounded-full bg-amber-500/10 text-amber-600 flex items-center justify-center mx-auto">
+                                <x-lucide-file-plus class="size-6" />
+                            </div>
+                            <div class="space-y-1 max-w-md mx-auto">
+                                <h4 class="text-sm font-semibold text-foreground">Belum Ada Berkas Arsip</h4>
+                                <p class="text-xs text-muted-foreground">
+                                    Nomor surat resmi di atas telah dialokasikan dan siap dipakai di Microsoft Word. Setelah selesai, Anda dapat mengunggah hasil dokumen (.pdf / .docx) di sini untuk diarsipkan.
+                                </p>
+                            </div>
+                            @if ($canEdit)
+                                <div class="max-w-xs mx-auto space-y-2">
+                                    <input
+                                        type="file"
+                                        wire:model="newManualFile"
+                                        accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                                        class="block w-full text-xs text-muted-foreground file:mr-2 file:py-1.5 file:px-2.5 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-primary/10 file:text-primary border border-border rounded-lg bg-background p-1 cursor-pointer"
+                                    />
+                                    <div wire:loading wire:target="newManualFile" class="text-xs text-primary flex items-center justify-center gap-1.5">
+                                        <span class="size-3 border-2 border-primary border-t-transparent rounded-full animate-spin"></span>
+                                        <span>Mengunggah...</span>
+                                    </div>
+                                    <x-ui.form-error for="newManualFile" />
+                                    @if ($newManualFile)
+                                        <x-ui.button size="sm" type="button" wire:click="uploadManualDocument" class="w-full gap-1.5">
+                                            <x-lucide-upload class="size-3.5" />
+                                            <span>Simpan Berkas Arsip</span>
+                                        </x-ui.button>
+                                    @endif
+                                </div>
+                            @endif
+                        </div>
+                    @endif
                 </div>
-                @if ($letter->link_drive)
-                    <x-ui.button as="a" href="{{ $letter->link_drive }}" target="_blank" class="gap-1.5 bg-blue-600 hover:bg-blue-700 text-white">
-                        <x-lucide-external-link class="size-4" />
-                        <span>Buka di Google Drive</span>
-                    </x-ui.button>
-                @endif
             </div>
         @elseif (! $canEdit || $activeRightTab !== 'editor')
             {{-- Mode Pratinjau Dokumen Cepat (Instant Fast PDF Preview) --}}
@@ -1000,6 +1219,62 @@
                         ></iframe>
                     @endif
                 </div>
+            </div>
+        </div>
+    @endif
+
+    {{-- Modal Edit Metadata Surat Manual --}}
+    @if ($showEditMetadataModal)
+        <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-xs">
+            <div class="w-full max-w-lg rounded-xl border border-border bg-card p-6 shadow-xl space-y-4">
+                <div class="flex items-center justify-between pb-3 border-b border-border">
+                    <div class="flex items-center gap-2">
+                        <x-lucide-edit-3 class="size-4 text-amber-600" />
+                        <h3 class="text-sm font-semibold text-foreground">Edit Metadata Surat Manual</h3>
+                    </div>
+                    <button type="button" wire:click="$set('showEditMetadataModal', false)" class="text-muted-foreground hover:text-foreground text-lg leading-none">&times;</button>
+                </div>
+
+                <form wire:submit.prevent="saveMetadata" class="space-y-4">
+                    <div>
+                        <x-ui.label for="editPerihal">Perihal Surat <span class="text-destructive">*</span></x-ui.label>
+                        <x-ui.input id="editPerihal" wire:model="editPerihal" class="mt-1" required />
+                        <x-ui.form-error for="editPerihal" />
+                    </div>
+
+                    <div>
+                        <x-ui.label for="editInstansiTujuan">Instansi / Tujuan Surat <span class="text-destructive">*</span></x-ui.label>
+                        <x-ui.input id="editInstansiTujuan" wire:model="editInstansiTujuan" class="mt-1" required />
+                        <x-ui.form-error for="editInstansiTujuan" />
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                            <x-ui.label for="editTanggalSurat">Tanggal Surat <span class="text-destructive">*</span></x-ui.label>
+                            <x-ui.input id="editTanggalSurat" type="date" wire:model="editTanggalSurat" class="mt-1" required />
+                            <x-ui.form-error for="editTanggalSurat" />
+                        </div>
+                        <div>
+                            <x-ui.label for="editTanggalKegiatan">Tanggal Kegiatan (Opsional)</x-ui.label>
+                            <x-ui.input id="editTanggalKegiatan" type="date" wire:model="editTanggalKegiatan" class="mt-1" />
+                            <x-ui.form-error for="editTanggalKegiatan" />
+                        </div>
+                    </div>
+
+                    <div>
+                        <x-ui.label for="editKeterangan">Keterangan / Catatan Tambahan (Opsional)</x-ui.label>
+                        <x-ui.textarea id="editKeterangan" wire:model="editKeterangan" rows="3" class="mt-1 text-xs" />
+                        <x-ui.form-error for="editKeterangan" />
+                    </div>
+
+                    <div class="flex justify-end gap-2 pt-3 border-t border-border">
+                        <x-ui.button type="button" variant="outline" wire:click="$set('showEditMetadataModal', false)">Batal</x-ui.button>
+                        <x-ui.button type="submit" class="gap-1.5">
+                            <x-lucide-check class="size-4" />
+                            <span>Simpan Perubahan</span>
+                        </x-ui.button>
+                    </div>
+                </form>
             </div>
         </div>
     @endif

@@ -309,17 +309,18 @@
                                     @endcan
 
                                     @can('surat_masuk.delete')
-                                        <x-ui.button
+                                        <button
                                             type="button"
-                                            size="xs"
-                                            variant="ghost"
-                                            class="p-1 text-destructive hover:text-destructive"
-                                            wire:click="deleteSuratMasuk({{ $sm->id }})"
-                                            wire:confirm="Yakin ingin menghapus arsip surat masuk ini?"
+                                            class="inline-flex items-center justify-center p-1 text-destructive hover:bg-destructive/10 rounded transition cursor-pointer"
+                                            @click="$store.confirmModal.show({
+                                                title: 'Hapus Surat Masuk?',
+                                                message: 'Yakin ingin menghapus arsip surat masuk \'{{ addslashes($sm->perihal ?? $sm->nomor_surat_pengirim) }}\'? Tindakan ini tidak dapat dibatalkan.',
+                                                confirmText: 'Ya, Hapus'
+                                            }).then(ok => ok && $wire.deleteSuratMasuk({{ $sm->id }}))"
                                             title="Hapus"
                                         >
                                             <x-lucide-trash-2 class="size-3" />
-                                        </x-ui.button>
+                                        </button>
                                     @endcan
                                 </div>
                             </td>

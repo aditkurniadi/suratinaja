@@ -7,6 +7,8 @@ use App\Actions\Letters\DeleteLetterAction;
 use App\Actions\Letters\DuplicateLetterAction;
 use App\Actions\Letters\ReviseLetterAction;
 use App\Actions\Letters\TransitionLetterStatusAction;
+use App\Actions\Letters\UploadManualDocumentAction;
+use App\Enums\LetterStatus;
 use App\Exceptions\DomainException;
 use App\Models\Letter;
 use App\Services\Documents\OnlyOfficeService;
@@ -15,11 +17,14 @@ use App\Support\CurrentWorkspace;
 use Livewire\Attributes\Title;
 use Livewire\Attributes\Url;
 use Livewire\Component;
+use Livewire\WithFileUploads;
 
 #[Title('Detail Surat')]
 class LetterShow extends Component
 {
-    public Letter $letter;
+    use WithFileUploads;
+
+    public Letter|int $letter;
 
     #[Url(except: 'preview')]
     public string $activeRightTab = 'preview';
@@ -55,6 +60,21 @@ class LetterShow extends Component
 
     public int $envelopePreviewVersion = 1;
 
+    // Properti Edit Metadata & Upload Arsip Surat Manual
+    public bool $showEditMetadataModal = false;
+
+    public string $editPerihal = '';
+
+    public string $editTanggalSurat = '';
+
+    public string $editTanggalKegiatan = '';
+
+    public string $editInstansiTujuan = '';
+
+    public string $editKeterangan = '';
+
+    public $newManualFile = null;
+
     public function mount(Letter|int $letter): void
     {
         $id = $letter instanceof Letter ? $letter->id : $letter;
@@ -64,7 +84,7 @@ class LetterShow extends Component
         $this->revisionPerihal = $this->letter->perihal;
         $this->revisionVariables = $this->letter->field_values ?? [];
 
-        if ($this->letter->is_manual_number) {
+        if ($this->letter->is_manual || $this->letter->is_manual_number || ! $this->letter->template_id) {
             $this->activeRightTab = 'preview';
         }
     }
@@ -220,6 +240,88 @@ class LetterShow extends Component
         $this->envelopePreviewVersion = time();
     }
 
+    public function openEditMetadataModal(): void
+    {
+        $this->editPerihal = $this->letter->perihal;
+        $this->editTanggalSurat = $this->letter->letter_date?->toDateString() ?? '';
+        $this->editTanggalKegiatan = $this->letter->tanggal_kegiatan?->toDateString() ?? '';
+        $this->editInstansiTujuan = (string) ($this->letter->field_values['instansi'] ?? $this->letter->field_values['penerima'] ?? '');
+        $this->editKeterangan = (string) ($this->letter->keterangan ?? '');
+        $this->showEditMetadataModal = true;
+    }
+
+    public function saveMetadata(): void
+    {
+        $workspace = app(CurrentWorkspace::class)->get();
+        $role = $workspace ? $workspace->roleOf(auth()->user()) : null;
+        $canEdit = (auth()->user()?->can('surat_keluar.edit') || ($role?->canWrite() ?? false))
+            && in_array($this->letter->status, [LetterStatus::Draft, LetterStatus::MenungguTtd], true);
+
+        if (! $canEdit) {
+            $this->dispatch('toast', ['type' => 'error', 'title' => 'Akses ditolak', 'description' => 'Anda tidak memiliki hak akses mengubah metadata surat ini.']);
+            return;
+        }
+
+        $this->validate([
+            'editPerihal' => ['required', 'string', 'max:255'],
+            'editTanggalSurat' => ['required', 'date'],
+            'editTanggalKegiatan' => ['nullable', 'date'],
+            'editInstansiTujuan' => ['required', 'string', 'max:255'],
+            'editKeterangan' => ['nullable', 'string', 'max:2000'],
+        ], [
+            'editPerihal.required' => 'Perihal surat wajib diisi.',
+            'editInstansiTujuan.required' => 'Instansi tujuan surat wajib diisi.',
+            'editTanggalSurat.required' => 'Tanggal surat wajib diisi.',
+        ]);
+
+        $fields = $this->letter->field_values ?? [];
+        $fields['instansi'] = trim($this->editInstansiTujuan);
+        if (empty($fields['penerima'])) {
+            $fields['penerima'] = trim($this->editInstansiTujuan);
+        }
+
+        $this->letter->forceFill([
+            'perihal' => trim($this->editPerihal),
+            'letter_date' => $this->editTanggalSurat,
+            'tanggal_kegiatan' => ! empty($this->editTanggalKegiatan) ? $this->editTanggalKegiatan : null,
+            'keterangan' => trim($this->editKeterangan) ?: null,
+            'field_values' => $fields,
+        ])->save();
+
+        $this->showEditMetadataModal = false;
+        $this->letter->refresh();
+        $this->dispatch('toast', ['type' => 'success', 'title' => 'Metadata surat berhasil diperbarui']);
+    }
+
+    public function uploadManualDocument(UploadManualDocumentAction $action): void
+    {
+        $workspace = app(CurrentWorkspace::class)->get();
+        $role = $workspace ? $workspace->roleOf(auth()->user()) : null;
+        $canEdit = (auth()->user()?->can('surat_keluar.edit') || ($role?->canWrite() ?? false))
+            && in_array($this->letter->status, [LetterStatus::Draft, LetterStatus::MenungguTtd], true);
+
+        if (! $canEdit) {
+            $this->dispatch('toast', ['type' => 'error', 'title' => 'Akses ditolak', 'description' => 'Anda tidak memiliki hak akses mengunggah dokumen pada surat ini.']);
+            return;
+        }
+
+        $this->validate([
+            'newManualFile' => ['required', 'file', 'mimes:pdf,docx', 'max:20480'],
+        ], [
+            'newManualFile.required' => 'Pilih berkas PDF atau Word (.docx) terlebih dahulu.',
+            'newManualFile.mimes' => 'Format berkas harus PDF (.pdf) atau Word (.docx).',
+            'newManualFile.max' => 'Ukuran berkas maksimal 20 MB.',
+        ]);
+
+        try {
+            $this->letter = $action->execute($this->letter, auth()->user(), $this->newManualFile);
+            $this->newManualFile = null;
+            $this->dispatch('toast', ['type' => 'success', 'title' => 'Berkas arsip surat berhasil diunggah']);
+        } catch (\Throwable $e) {
+            $this->dispatch('toast', ['type' => 'error', 'title' => 'Gagal mengunggah berkas', 'description' => $e->getMessage()]);
+        }
+    }
+
     public function render(VariableTypeResolver $resolver, OnlyOfficeService $onlyOfficeService)
     {
         $workspace = app(CurrentWorkspace::class)->get();
@@ -235,8 +337,10 @@ class LetterShow extends Component
         $canEdit = ($user?->can('surat_keluar.edit') || ($role?->canWrite() ?? false))
             && in_array($this->letter->status, [\App\Enums\LetterStatus::Draft, \App\Enums\LetterStatus::MenungguTtd], true);
 
+        $isManual = (bool) ($this->letter->is_manual || $this->letter->is_manual_number || ! $this->letter->template_id);
+
         $onlyOfficeConfig = null;
-        if ($canEdit && ! $this->letter->is_manual_number && $this->activeRightTab === 'editor') {
+        if ($canEdit && ! $isManual && $this->activeRightTab === 'editor') {
             try {
                 $onlyOfficeConfig = $onlyOfficeService->buildEditorConfig($this->letter, $user);
             } catch (\Throwable) {

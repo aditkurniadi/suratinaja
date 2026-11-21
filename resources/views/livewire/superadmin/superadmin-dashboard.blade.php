@@ -244,9 +244,13 @@
                                             @if ($u->id !== auth()->id() && $u->email !== config('suratinaja.super_admin.email'))
                                                 <button
                                                     type="button"
-                                                    wire:click="toggleUserStatus({{ $u->id }})"
-                                                    wire:confirm="Yakin ingin {{ $u->isSuspended() ? 'mengaktifkan kembali' : 'menonaktifkan (suspend)' }} akun {{ $u->name }}?"
-                                                    class="inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium transition-colors {{ $u->isSuspended() ? 'text-emerald-600 hover:bg-emerald-500/10' : 'text-red-600 hover:bg-red-500/10' }}"
+                                                    @click="$store.confirmModal.show({
+                                                        title: '{{ $u->isSuspended() ? 'Aktifkan Kembali Akun?' : 'Nonaktifkan (Suspend) Akun?' }}',
+                                                        message: 'Yakin ingin {{ $u->isSuspended() ? 'mengaktifkan kembali' : 'menonaktifkan (suspend)' }} akun {{ addslashes($u->name) }}?',
+                                                        confirmText: '{{ $u->isSuspended() ? 'Ya, Aktifkan' : 'Ya, Suspend' }}',
+                                                        confirmVariant: '{{ $u->isSuspended() ? 'warning' : 'destructive' }}'
+                                                    }).then(ok => ok && $wire.toggleUserStatus({{ $u->id }}))"
+                                                    class="inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium transition-colors cursor-pointer {{ $u->isSuspended() ? 'text-emerald-600 hover:bg-emerald-500/10' : 'text-red-600 hover:bg-red-500/10' }}"
                                                     title="{{ $u->isSuspended() ? 'Aktifkan Akun' : 'Suspend Akun' }}"
                                                 >
                                                     @if ($u->isSuspended())
