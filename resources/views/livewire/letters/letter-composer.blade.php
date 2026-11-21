@@ -193,12 +193,12 @@
                                         'bg-primary text-primary-foreground' => $letterMode === 'manual_number',
                                         'bg-muted text-muted-foreground' => $letterMode !== 'manual_number',
                                     ])>
-                                        <x-lucide-external-link class="size-5" />
+                                        <x-lucide-hash class="size-5" />
                                     </div>
                                     <div>
-                                        <p class="text-sm font-semibold text-foreground">Ambil Nomor Saja / Dokumen Eksternal</p>
+                                        <p class="text-sm font-semibold text-foreground">Ambil Nomor Saja (Manual Word)</p>
                                         <p class="text-xs text-muted-foreground mt-0.5">
-                                            Untuk surat yang dibuat di luar sistem (Google Docs / Canva / Manual). Dialokasikan nomor urut resmi dan link Google Drive.
+                                            Untuk surat yang dibuat manual di Microsoft Word tanpa template. Nomor resmi dialokasikan dan dokumen dapat diarsipkan.
                                         </p>
                                     </div>
                                 </button>
@@ -435,7 +435,7 @@
                             <div class="flex items-center gap-2 pb-2 border-b border-border">
                                 <x-lucide-file-input class="size-4 text-primary" />
                                 <span class="text-xs font-semibold text-foreground uppercase tracking-wider">
-                                    Detail Dokumen Eksternal &amp; Penerima
+                                    Detail Dokumen Manual &amp; Penerima
                                 </span>
                             </div>
 
@@ -453,14 +453,49 @@
                                 </div>
 
                                 <div>
-                                    <x-ui.label for="recipientAgency">Instansi / Tempat Tujuan (Opsional)</x-ui.label>
+                                    <x-ui.label for="recipientAgency">Instansi / Tempat Tujuan <span class="text-destructive">*</span></x-ui.label>
                                     <x-ui.input
                                         id="recipientAgency"
                                         wire:model.live.debounce.300ms="recipientAgency"
                                         class="mt-1.5"
                                         placeholder="Mis. Politeknik Negeri Cilacap / Dinas Pendidikan"
+                                        required
                                     />
+                                    <p class="text-[10px] text-muted-foreground mt-0.5">Wajib diisi agar langsung dapat dipakai untuk Cetak Kop Amplop.</p>
                                     <x-ui.form-error for="recipientAgency" />
+                                </div>
+
+                                <div class="sm:col-span-2">
+                                    <x-ui.label for="keterangan">Keterangan / Catatan Tambahan (Opsional)</x-ui.label>
+                                    <x-ui.textarea
+                                        id="keterangan"
+                                        wire:model.live.debounce.300ms="keterangan"
+                                        rows="2"
+                                        class="mt-1.5 text-xs"
+                                        placeholder="Keterangan arsip, peruntukan khusus, nomor referensi luar, dll."
+                                    />
+                                    <x-ui.form-error for="keterangan" />
+                                </div>
+
+                                <div class="sm:col-span-2">
+                                    <x-ui.label for="manualArchiveFile">Upload Berkas Arsip (.pdf / .docx) (Opsional)</x-ui.label>
+                                    <div class="mt-1.5 flex flex-col gap-2">
+                                        <input
+                                            type="file"
+                                            id="manualArchiveFile"
+                                            wire:model="manualArchiveFile"
+                                            accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                                            class="block w-full text-xs text-muted-foreground file:mr-3 file:py-2 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-primary/10 file:text-primary hover:file:bg-primary/20 cursor-pointer border border-border rounded-lg bg-background p-1.5"
+                                        />
+                                        <div wire:loading wire:target="manualArchiveFile" class="text-xs text-primary flex items-center gap-1.5">
+                                            <span class="size-3.5 border-2 border-primary border-t-transparent rounded-full animate-spin"></span>
+                                            <span>Mengunggah berkas arsip...</span>
+                                        </div>
+                                        <p class="text-[11px] text-muted-foreground">
+                                            Bisa dikosongkan terlebih dahulu dan diunggah nanti pada Detail Surat setelah selesai diketik di Microsoft Word.
+                                        </p>
+                                    </div>
+                                    <x-ui.form-error for="manualArchiveFile" />
                                 </div>
 
                                 <div class="sm:col-span-2">
@@ -476,22 +511,7 @@
                                             class="!pl-9"
                                         />
                                     </div>
-                                    <p class="text-[11px] text-muted-foreground mt-1">
-                                        Lampirkan link Google Drive berkas PDF/Word surat agar mudah diakses oleh seluruh anggota workspace.
-                                    </p>
                                     <x-ui.form-error for="linkDrive" />
-                                </div>
-
-                                <div class="sm:col-span-2">
-                                    <x-ui.label for="manualNotes">Catatan Tambahan (Opsional)</x-ui.label>
-                                    <x-ui.textarea
-                                        id="manualNotes"
-                                        wire:model.live.debounce.300ms="manualNotes"
-                                        rows="2"
-                                        class="mt-1.5 text-xs"
-                                        placeholder="Keterangan arsip, keperluan khusus, dll."
-                                    />
-                                    <x-ui.form-error for="manualNotes" />
                                 </div>
                             </div>
                         </div>

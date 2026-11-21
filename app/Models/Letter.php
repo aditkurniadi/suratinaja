@@ -31,8 +31,10 @@ class Letter extends Model
         'preview_pdf_path',
         'link_drive',
         'is_manual_number',
+        'is_manual',
         'version',
         'cancel_reason',
+        'keterangan',
         'signed_at',
         'cancelled_at',
     ];
@@ -46,9 +48,15 @@ class Letter extends Model
             'field_values' => 'array',
             'version' => 'integer',
             'is_manual_number' => 'boolean',
+            'is_manual' => 'boolean',
             'signed_at' => 'datetime',
             'cancelled_at' => 'datetime',
         ];
+    }
+
+    public function isManualDocument(): bool
+    {
+        return (bool) ($this->is_manual || $this->is_manual_number || ! $this->template_id);
     }
 
     public function template(): BelongsTo

@@ -22,12 +22,70 @@ document.addEventListener('alpine:init', () => {
         items: [],
         push({ type = 'success', title = '', description = '' }) {
             const id = Date.now() + Math.random();
-            this.items.push({ id, type, title, description });
-            setTimeout(() => this.remove(id), 4000);
+            const duration = (type === 'warning' || type === 'error') ? 6000 : 4000;
+            const item = { id, type, title, description, duration, remaining: duration, startedAt: Date.now(), paused: false };
+            this.items.push(item);
+            this._startTimer(item);
+        },
+        _startTimer(item) {
+            if (item._timer) clearTimeout(item._timer);
+            item._timer = setTimeout(() => this.remove(item.id), item.remaining);
+        },
+        pause(id) {
+            const item = this.items.find(t => t.id === id);
+            if (!item || item.paused) return;
+            clearTimeout(item._timer);
+            item.remaining = Math.max(0, item.remaining - (Date.now() - item.startedAt));
+            item.paused = true;
+        },
+        resume(id) {
+            const item = this.items.find(t => t.id === id);
+            if (!item || !item.paused) return;
+            item.paused = false;
+            item.startedAt = Date.now();
+            this._startTimer(item);
         },
         remove(id) {
-            this.items = this.items.filter((t) => t.id !== id);
+            const item = this.items.find(t => t.id === id);
+            if (item?._timer) clearTimeout(item._timer);
+            this.items = this.items.filter(t => t.id !== id);
         },
+    });
+
+    Alpine.store('confirmModal', {
+        isOpen: false,
+        title: '',
+        message: '',
+        confirmText: 'Ya, Hapus',
+        cancelText: 'Batal',
+        confirmVariant: 'destructive', // 'destructive' | 'warning'
+        loading: false,
+        _resolve: null,
+        show({ title, message, confirmText = 'Ya, Hapus', cancelText = 'Batal', confirmVariant = 'destructive' }) {
+            this.title = title;
+            this.message = message;
+            this.confirmText = confirmText;
+            this.cancelText = cancelText;
+            this.confirmVariant = confirmVariant;
+            this.loading = false;
+            this.isOpen = true;
+            return new Promise((resolve) => { this._resolve = resolve; });
+        },
+        async confirm() {
+            this.loading = true;
+            if (this._resolve) this._resolve(true);
+            this._resolve = null;
+            // loading stays true until caller closes
+            await new Promise(r => setTimeout(r, 300));
+            this.isOpen = false;
+            this.loading = false;
+        },
+        cancel() {
+            if (this.loading) return;
+            if (this._resolve) this._resolve(false);
+            this._resolve = null;
+            this.isOpen = false;
+        }
     });
 
     Alpine.store('sidebar', {
@@ -49,6 +107,11 @@ window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () 
 });
 
 window.addEventListener('toast', (e) => {
+    const detail = Array.isArray(e.detail) ? e.detail[0] : e.detail;
+    window.Alpine?.store('toasts')?.push(detail || {});
+});
+// Also catch 'notify' and 'notification' for compatibility
+window.addEventListener('notify', (e) => {
     const detail = Array.isArray(e.detail) ? e.detail[0] : e.detail;
     window.Alpine?.store('toasts')?.push(detail || {});
 });

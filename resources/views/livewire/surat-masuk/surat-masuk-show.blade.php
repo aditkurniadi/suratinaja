@@ -56,17 +56,18 @@
             @endcan
 
             @can('surat_masuk.delete')
-                <x-ui.button
+                <button
                     type="button"
-                    variant="destructive"
-                    size="sm"
-                    wire:click="deleteSuratMasuk"
-                    wire:confirm="Yakin ingin menghapus seluruh arsip dan riwayat disposisi surat masuk ini?"
-                    class="gap-1.5"
+                    class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-destructive text-destructive-foreground hover:bg-destructive/90 transition shadow-2xs cursor-pointer"
+                    @click="$store.confirmModal.show({
+                        title: 'Hapus Surat Masuk?',
+                        message: 'Yakin ingin menghapus seluruh arsip dan riwayat disposisi surat masuk ini? Tindakan ini tidak dapat dibatalkan.',
+                        confirmText: 'Ya, Hapus'
+                    }).then(ok => ok && $wire.deleteSuratMasuk())"
                 >
                     <x-lucide-trash-2 class="size-3.5" />
                     <span class="hidden sm:inline">Hapus</span>
-                </x-ui.button>
+                </button>
             @endcan
         </div>
     </div>
@@ -197,17 +198,19 @@
                                             <x-lucide-external-link class="size-3" />
                                             <span>Lihat Surat</span>
                                         </x-ui.button>
-                                        <x-ui.button
+                                        <button
                                             type="button"
-                                            size="xs"
-                                            variant="ghost"
-                                            wire:click="unlinkLetter({{ $repLetter->id }})"
-                                            wire:confirm="Lepas tautan surat keluar ini dari surat masuk?"
-                                            class="p-1 text-muted-foreground hover:text-destructive"
+                                            class="inline-flex items-center justify-center p-1 text-muted-foreground hover:text-destructive rounded transition cursor-pointer"
+                                            @click="$store.confirmModal.show({
+                                                title: 'Lepas Tautan Surat?',
+                                                message: 'Lepas tautan surat keluar ini dari surat masuk?',
+                                                confirmText: 'Ya, Lepas',
+                                                confirmVariant: 'warning'
+                                            }).then(ok => ok && $wire.unlinkLetter({{ $repLetter->id }}))"
                                             title="Lepas Tautan"
                                         >
                                             <x-lucide-x class="size-3.5" />
-                                        </x-ui.button>
+                                        </button>
                                     </div>
                                 </div>
                             @endforeach
@@ -420,17 +423,18 @@
                                 @endcan
 
                                 @can('disposisi.delete')
-                                    <x-ui.button
+                                    <button
                                         type="button"
-                                        size="xs"
-                                        variant="ghost"
-                                        class="p-1 text-destructive hover:text-destructive h-7"
-                                        wire:click="deleteDisposisi({{ $d->id }})"
-                                        wire:confirm="Hapus instruksi disposisi ini?"
+                                        class="inline-flex items-center justify-center p-1 text-destructive hover:bg-destructive/10 rounded h-7 transition cursor-pointer"
+                                        @click="$store.confirmModal.show({
+                                            title: 'Hapus Instruksi Disposisi?',
+                                            message: 'Hapus instruksi disposisi ini? Tindakan ini tidak dapat dibatalkan.',
+                                            confirmText: 'Ya, Hapus'
+                                        }).then(ok => ok && $wire.deleteDisposisi({{ $d->id }}))"
                                         title="Hapus"
                                     >
                                         <x-lucide-trash-2 class="size-3" />
-                                    </x-ui.button>
+                                    </button>
                                 @endcan
                             </div>
                         </div>

@@ -13,6 +13,10 @@
                         <x-lucide-layers class="size-4" />
                         <span>Bulk Generate</span>
                     </x-ui.button>
+                    <x-ui.button variant="outline" size="sm" :href="route('letters.create', ['mode' => 'manual'])" class="text-amber-700 dark:text-amber-400 border-amber-300 dark:border-amber-800 hover:bg-amber-50 dark:hover:bg-amber-950/40">
+                        <x-lucide-hash class="size-4" />
+                        <span>Ambil Nomor</span>
+                    </x-ui.button>
                     <x-ui.button size="sm" :href="route('letters.create')">
                         <x-lucide-plus class="size-4" />
                         <span>Buat Surat</span>
@@ -110,10 +114,10 @@
                                         @endif
                                     </td>
                                     <td class="py-2.5 px-3 text-muted-foreground hidden md:table-cell">
-                                        @if ($letter->is_manual_number)
-                                            <span class="inline-flex items-center gap-1 text-[11px] font-medium text-blue-600 dark:text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded">
-                                                <x-lucide-external-link class="size-3" />
-                                                <span>Dokumen Eksternal</span>
+                                        @if ($letter->isManualDocument())
+                                            <span class="inline-flex items-center gap-1 text-[11px] font-medium text-amber-700 dark:text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded">
+                                                <x-lucide-hash class="size-3" />
+                                                <span>Manual</span>
                                             </span>
                                         @else
                                             {{ $letter->template?->name ?? '—' }}
@@ -150,16 +154,18 @@
                                                 Detail
                                             </x-ui.button>
                                             @if ($role?->canWrite() && $letter->signed_at === null && $letter->status !== \App\Enums\LetterStatus::Selesai)
-                                                <x-ui.button
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    class="text-destructive hover:bg-destructive/10 hover:text-destructive h-8 w-8 p-0"
-                                                    wire:click="deleteLetter({{ $letter->id }})"
-                                                    wire:confirm="Yakin ingin menghapus draf surat '{{ $letter->perihal }}'? Dokumen akan dihapus dan nomor surat akan dilepaskan (tidak hangus)."
+                                                <button
+                                                    type="button"
+                                                    class="inline-flex items-center justify-center text-destructive hover:bg-destructive/10 hover:text-destructive h-8 w-8 rounded-lg transition cursor-pointer"
+                                                    @click="$store.confirmModal.show({
+                                                        title: 'Hapus Surat Keluar?',
+                                                        message: 'Hapus draf surat \'{{ addslashes($letter->perihal) }}\'? Dokumen akan dihapus dan nomor surat akan dilepaskan (tidak hangus).',
+                                                        confirmText: 'Ya, Hapus'
+                                                    }).then(ok => ok && $wire.deleteLetter({{ $letter->id }}))"
                                                     title="Hapus draf &amp; lepaskan nomor"
                                                 >
                                                     <x-lucide-trash-2 class="size-3.5" />
-                                                </x-ui.button>
+                                                </button>
                                             @endif
                                         </div>
                                     </td>
@@ -203,7 +209,7 @@
                                 <div class="flex items-center gap-1.5 truncate max-w-[180px]">
                                     <span>{{ $letter->letter_date?->format('d M Y') }}</span>
                                     <span>&bull;</span>
-                                    <span class="truncate">{{ $letter->template?->name ?? 'Eksternal' }}</span>
+                                    <span class="truncate">{{ $letter->isManualDocument() ? 'Manual' : ($letter->template?->name ?? '—') }}</span>
                                 </div>
                                 <div class="flex items-center gap-1">
                                     @if ($role?->canWrite())
@@ -229,16 +235,18 @@
                                         Detail
                                     </x-ui.button>
                                     @if ($role?->canWrite() && $letter->signed_at === null && $letter->status !== \App\Enums\LetterStatus::Selesai)
-                                        <x-ui.button
-                                            variant="ghost"
-                                            size="xs"
-                                            class="text-destructive hover:bg-destructive/10 hover:text-destructive h-7 w-7 p-0"
-                                            wire:click="deleteLetter({{ $letter->id }})"
-                                            wire:confirm="Yakin ingin menghapus draf surat '{{ $letter->perihal }}'? Dokumen akan dihapus dan nomor surat akan dilepaskan (tidak hangus)."
+                                        <button
+                                            type="button"
+                                            class="inline-flex items-center justify-center text-destructive hover:bg-destructive/10 hover:text-destructive h-7 w-7 rounded-md transition cursor-pointer"
+                                            @click="$store.confirmModal.show({
+                                                title: 'Hapus Surat Keluar?',
+                                                message: 'Hapus draf surat \'{{ addslashes($letter->perihal) }}\'? Dokumen akan dihapus dan nomor surat akan dilepaskan (tidak hangus).',
+                                                confirmText: 'Ya, Hapus'
+                                            }).then(ok => ok && $wire.deleteLetter({{ $letter->id }}))"
                                             title="Hapus draf &amp; lepaskan nomor"
                                         >
                                             <x-lucide-trash-2 class="size-3" />
-                                        </x-ui.button>
+                                        </button>
                                     @endif
                                 </div>
                             </div>
